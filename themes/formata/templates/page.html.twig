@@ -1,0 +1,51 @@
+{#
+/**
+ * @file display a single page.
+ */
+#}
+<div id="header">
+    {% if page.header %}
+        {{ page.header }}
+    {% endif %}
+</div>
+    <div id="pre-content">
+        {% if page.precontent %}
+            {{ page.precontent }}
+        {% endif %}
+    </div>
+    <div id="main-content">
+        {% if messages %}
+            <div id="messages">
+                <div class="contain clearfix">
+                    {{ messages }}
+                </div>
+            </div>
+        {% endif %}
+        <main id="content" role="main">
+            {% if tabs %}
+                <nav class="tabs" role="navigation">
+                    {{ tabs }}
+                </nav>
+            {% endif %}
+            {{ page.help }}
+            {% if action_links %}
+                <ul class="action-links">
+                    {{ action_links }}
+                </ul>
+            {% endif %}
+            {{ title_prefix }}
+            {% if title %}
+                <h1 class="title" id="page-title">
+                    {{ title }}
+                </h1>
+            {% endif %}
+            {{ title_suffix }}
+            {{ page.content }}
+        </main>
+    </div>
+</div>
+<footer  id="footer">
+    {% if page.footer %}
+        {{ page.footer }}
+    {% endif %}
+</footer>
