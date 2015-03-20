@@ -7,6 +7,7 @@
 
 namespace Drupal\views\Plugin\views;
 
+use Drupal\Component\Plugin\DependentPluginInterface;
 use Drupal\Component\Utility\String;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Language\LanguageInterface;
@@ -28,9 +29,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   template engine extension).
  *   If a template file should be used, the file has to be placed in the
  *   module's templates folder.
- *   Example: theme = "mymodule_row" of module "mymodule" will implement either
- *   theme_mymodule_row() or mymodule-row.html.twig in the
- *   [..]/modules/mymodule/templates folder.
+ *   Example: theme = "mymodule_row" of module "mymodule" will implement
+ *   mymodule-row.html.twig in the [..]/modules/mymodule/templates folder.
  * - register_theme: (optional) When set to TRUE (default) the theme is
  *   registered automatically. When set to FALSE the plugin reuses an existing
  *   theme implementation, defined by another module or views plugin.
@@ -42,7 +42,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *
  * @ingroup views_plugins
  */
-abstract class PluginBase extends ComponentPluginBase implements ContainerFactoryPluginInterface, ViewsPluginInterface {
+abstract class PluginBase extends ComponentPluginBase implements ContainerFactoryPluginInterface, ViewsPluginInterface, DependentPluginInterface {
 
   /**
    * Include negotiated languages when listing languages.
@@ -50,6 +50,20 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
    * @see \Drupal\views\Plugin\views\PluginBase::listLanguages()
    */
   const INCLUDE_NEGOTIATED = 16;
+
+  /**
+   * Include entity row languages when listing languages.
+   *
+   * @see \Drupal\views\Plugin\views\PluginBase::listLanguages()
+   */
+  const INCLUDE_ENTITY = 32;
+
+  /**
+   * Query string to indicate the site default language.
+   *
+   * @see \Drupal\Core\Language\LanguageInterface::LANGCODE_DEFAULT
+   */
+  const VIEWS_QUERY_LANGUAGE_SITE_DEFAULT = '***LANGUAGE_site_default***';
 
   /**
    * Options for this plugin will be held here.
@@ -90,6 +104,12 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
    */
   protected $usesOptions = FALSE;
 
+  /**
+   * Stores the render API renderer.
+   *
+   * @var \Drupal\Core\Render\RendererInterface
+   */
+  protected $renderer;
 
   /**
    * Constructs a PluginBase object.
@@ -130,13 +150,11 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
    * @code
    * 'option_name' => array(
    *  - 'default' => default value,
-   *  - 'translatable' => (optional) TRUE/FALSE (wrap in $this->t() on export if true),
    *  - 'contains' => (optional) array of items this contains, with its own
    *      defaults, etc. If contains is set, the default will be ignored and
    *      assumed to be array().
-   *  - 'bool' => (optional) TRUE/FALSE Is the value a boolean value. This will
-   *      change the export format to TRUE/FALSE instead of 1/0.
    *  ),
+   * @endcode
    *
    * @return array
    *   Returns the options of this handler/plugin.
@@ -166,6 +184,34 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
       }
       else {
         $storage[$option] = $definition['default'];
+      }
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function filterByDefinedOptions(array &$storage) {
+    $this->doFilterByDefinedOptions($storage, $this->defineOptions());
+  }
+
+  /**
+   * Do the work to filter out stored options depending on the defined options.
+   *
+   * @param array $storage
+   *   The stored options.
+   *
+   * @param array $options
+   *   The defined options.
+   */
+  protected function doFilterByDefinedOptions(array &$storage, array $options) {
+    foreach ($storage as $key => $sub_storage) {
+      if (!isset($options[$key])) {
+        unset($storage[$key]);
+      }
+
+      if (isset($options[$key]['contains'])) {
+        $this->doFilterByDefinedOptions($storage[$key], $options[$key]['contains']);
       }
     }
   }
@@ -287,6 +333,58 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
   }
 
   /**
+   * Replaces Views' tokens in a given string. It is the responsibility of the
+   * calling function to ensure $text and $token replacements are sanitized.
+   *
+   * This used to be a simple strtr() scattered throughout the code. Some Views
+   * tokens, such as arguments (e.g.: %1 or !1), still use the old format so we
+   * handle those as well as the new Twig-based tokens (e.g.: {{ field_name }})
+   *
+   * @param $text
+   *   String with possible tokens.
+   * @param $tokens
+   *   Array of token => replacement_value items.
+   *
+   * @return String
+   */
+  protected function viewsTokenReplace($text, $tokens) {
+    if (empty($tokens)) {
+      return $text;
+    }
+
+    // Separate Twig tokens from other tokens (e.g.: contextual filter tokens in
+    // the form of %1).
+    $twig_tokens = array();
+    $other_tokens = array();
+    foreach ($tokens as $token => $replacement) {
+      if (strpos($token, '{{') !== FALSE) {
+        // Twig wants a token replacement array stripped of curly-brackets.
+        $token = trim(str_replace(array('{', '}'), '', $token));
+        $twig_tokens[$token] = $replacement;
+      }
+      else {
+        $other_tokens[$token] = $replacement;
+      }
+    }
+
+    // Non-Twig tokens are a straight string replacement, Twig tokens get run
+    // through an inline template for rendering and replacement.
+    $text = strtr($text, $other_tokens);
+    if ($twig_tokens && !empty($text)) {
+      $build = array(
+        '#type' => 'inline_template',
+        '#template' => $text,
+        '#context' => $twig_tokens,
+      );
+
+      return $this->getRenderer()->render($build);
+    }
+    else {
+      return $text;
+    }
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function getAvailableGlobalTokens($prepared = FALSE, array $types = array()) {
@@ -381,8 +479,16 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
   /**
    * {@inheritdoc}
    */
-  public function getDependencies() {
-    return array();
+  public function calculateDependencies() {
+    return [];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getProvider() {
+    $definition = $this->getPluginDefinition();
+    return $definition['provider'];
   }
 
   /**
@@ -398,26 +504,35 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
    *     note that this is not included in STATE_ALL.
    *   - \Drupal\views\Plugin\views\PluginBase::INCLUDE_NEGOTIATED: Add
    *     negotiated language types.
+   *   - \Drupal\views\Plugin\views\PluginBase::INCLUDE_ENTITY: Add
+   *     entity row language types. Note that these are only supported for
+   *     display options, not substituted in queries.
    *
    * @return array
    *   An array of language names, keyed by the language code. Negotiated and
    *   special languages have special codes that are substituted in queries by
-   *   static::queryLanguageSubstitutions().
+   *   PluginBase::queryLanguageSubstitutions().
    */
   protected function listLanguages($flags = LanguageInterface::STATE_ALL) {
     $manager = \Drupal::languageManager();
     $list = array();
 
+    // The entity languages should come first, if requested.
+    if ($flags & PluginBase::INCLUDE_ENTITY) {
+      $list['***LANGUAGE_entity_translation***'] = $this->t('Content language of view row');
+      $list['***LANGUAGE_entity_default***'] = $this->t('Original language of content in view row');
+    }
+
     // The Language Manager class takes care of the STATE_SITE_DEFAULT case.
-    // It comes in with ID set to 'site_default'. Since this is not a real
-    // language, surround it by '***LANGUAGE_...***', like the negotiated
-    // languages below.
+    // It comes in with ID set to LanguageInterface::LANGCODE_SITE_DEFAULT.
+    // Since this is not a real language, surround it by '***LANGUAGE_...***',
+    // like the negotiated languages below.
     $languages = $manager->getLanguages($flags);
     foreach ($languages as $id => $language) {
-      if ($id == 'site_default') {
-        $id = '***LANGUAGE_' . $id . '***';
+      if ($id == LanguageInterface::LANGCODE_SITE_DEFAULT) {
+        $id = PluginBase::VIEWS_QUERY_LANGUAGE_SITE_DEFAULT;
       }
-      $list[$id] = $this->t($language->name);
+      $list[$id] = $this->t($language->getName());
     }
 
     // Add in negotiated languages, if requested.
@@ -429,7 +544,7 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
         // IDs by '***LANGUAGE_...***', to avoid query collisions.
         if (isset($type['name'])) {
           $id = '***LANGUAGE_' . $id . '***';
-          $list[$id] = $this->t('Language selected for !type', array('!type' => $type['name']));
+          $list[$id] = $this->t('!type language selected for page', array('!type' => $type['name']));
         }
       }
     }
@@ -441,7 +556,7 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
    * Returns substitutions for Views queries for languages.
    *
    * This is needed so that the language options returned by
-   * $this->listLanguages() are able to be used in queries. It is called
+   * PluginBase::listLanguages() are able to be used in queries. It is called
    * by the Views module implementation of hook_views_query_substitutions()
    * to get the language-related substitutions.
    *
@@ -454,17 +569,31 @@ abstract class PluginBase extends ComponentPluginBase implements ContainerFactor
     $manager = \Drupal::languageManager();
 
     // Handle default language.
-    $default = $manager->getDefaultLanguage()->id;
-    $changes['***LANGUAGE_site_default***'] = $default;
+    $default = $manager->getDefaultLanguage()->getId();
+    $changes[PluginBase::VIEWS_QUERY_LANGUAGE_SITE_DEFAULT] = $default;
 
     // Handle negotiated languages.
     $types = $manager->getDefinedLanguageTypesInfo();
     foreach ($types as $id => $type) {
       if (isset($type['name'])) {
-        $changes['***LANGUAGE_' . $id . '***'] = $manager->getCurrentLanguage($id)->id;
+        $changes['***LANGUAGE_' . $id . '***'] = $manager->getCurrentLanguage($id)->getId();
       }
     }
 
     return $changes;
   }
+
+  /**
+   * Returns the render API renderer.
+   *
+   * @return \Drupal\Core\Render\RendererInterface
+   */
+  protected function getRenderer() {
+    if (!isset($this->renderer)) {
+      $this->renderer = \Drupal::service('renderer');
+    }
+
+    return $this->renderer;
+  }
+
 }

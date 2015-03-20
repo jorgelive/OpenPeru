@@ -7,6 +7,8 @@
 
 namespace Drupal\link\Tests;
 
+use Drupal\Component\Utility\Unicode;
+use Drupal\field_ui\Tests\FieldUiTestTrait;
 use Drupal\simpletest\WebTestBase;
 
 /**
@@ -16,18 +18,23 @@ use Drupal\simpletest\WebTestBase;
  */
 class LinkFieldUITest extends WebTestBase {
 
+  use FieldUiTestTrait;
+
   /**
    * Modules to enable.
    *
    * @var array
    */
-  public static $modules = array('node', 'link', 'field_ui');
+  public static $modules = ['node', 'link', 'field_ui', 'block'];
 
+  /**
+   * {@inheritdoc}
+   */
   protected function setUp() {
     parent::setUp();
 
-    $this->web_user = $this->drupalCreateUser(array('administer content types', 'administer node fields', 'administer node display'));
-    $this->drupalLogin($this->web_user);
+    $this->drupalLogin($this->drupalCreateUser(['administer content types', 'administer node fields', 'administer node display']));
+    $this->drupalPlaceBlock('system_breadcrumb_block');
   }
 
   /**
@@ -36,21 +43,12 @@ class LinkFieldUITest extends WebTestBase {
   function testFieldUI() {
     // Add a content type.
     $type = $this->drupalCreateContentType();
-    $type_path = 'admin/structure/types/manage/' . $type->type;
+    $type_path = 'admin/structure/types/manage/' . $type->id();
 
     // Add a link field to the newly-created type.
     $label = $this->randomMachineName();
-    $field_name = drupal_strtolower($label);
-    $edit = array(
-      'fields[_add_new_field][label]' => $label,
-      'fields[_add_new_field][field_name]' => $field_name,
-      'fields[_add_new_field][type]' => 'link',
-    );
-    $this->drupalPostForm("$type_path/fields", $edit, t('Save'));
-    // Proceed to the Edit (field settings) page.
-    $this->drupalPostForm(NULL, array(), t('Save field settings'));
-    // Proceed to the Manage fields overview page.
-    $this->drupalPostForm(NULL, array(), t('Save settings'));
+    $field_name = Unicode::strtolower($label);
+    $this->fieldUIAddNewField($type_path, $field_name, $label, 'link');
 
     // Load the formatter page to check that the settings summary does not
     // generate warnings.

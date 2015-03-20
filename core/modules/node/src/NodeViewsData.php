@@ -8,12 +8,11 @@
 namespace Drupal\node;
 
 use Drupal\views\EntityViewsData;
-use Drupal\views\EntityViewsDataInterface;
 
 /**
  * Provides the views data for the node entity type.
  */
-class NodeViewsData extends EntityViewsData implements EntityViewsDataInterface {
+class NodeViewsData extends EntityViewsData {
 
   /**
    * {@inheritdoc}
@@ -112,6 +111,14 @@ class NodeViewsData extends EntityViewsData implements EntityViewsDataInterface 
         'title' => t('Path'),
         'help' => t('The aliased path to this content.'),
         'id' => 'node_path',
+      ),
+    );
+
+    $data['node']['node_bulk_form'] = array(
+      'title' => t('Node operations bulk form'),
+      'help' => t('Add a form element that lets you run operations on multiple nodes.'),
+      'field' => array(
+        'id' => 'node_bulk_form',
       ),
     );
 

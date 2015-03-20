@@ -15,6 +15,7 @@ use Drupal\views\Plugin\views\style\Table;
 use Drupal\views\ResultRow;
 use Drupal\views\ViewExecutable;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
  * Defines a actions-based bulk operation form element.
@@ -33,7 +34,7 @@ class BulkForm extends FieldPluginBase {
   /**
    * An array of actions that can be executed.
    *
-   * @var array
+   * @var \Drupal\system\ActionConfigEntityInterface[]
    */
   protected $actions = array();
 
@@ -80,7 +81,7 @@ class BulkForm extends FieldPluginBase {
    */
   protected function defineOptions() {
     $options = parent::defineOptions();
-    $options['action_title'] = array('default' => 'With selection', 'translatable' => TRUE);
+    $options['action_title'] = array('default' => 'With selection');
     $options['include_exclude'] = array(
       'default' => 'exclude',
     );
@@ -127,7 +128,7 @@ class BulkForm extends FieldPluginBase {
     parent::validateOptionsForm($form, $form_state);
 
     $selected_actions = $form_state->getValue(array('options', 'selected_actions'));
-    $form_state->getValue(array('options', 'selected_actions'), array_filter($selected_actions));
+    $form_state->setValue(array('options', 'selected_actions'), array_values(array_filter($selected_actions)));
   }
 
   /**
@@ -249,26 +250,45 @@ class BulkForm extends FieldPluginBase {
    *   An associative array containing the structure of the form.
    * @param \Drupal\Core\Form\FormStateInterface $form_state
    *   The current state of the form.
+   *
+   * @throws \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException
+   *   Thrown when the user tried to access an action without access to it.
    */
   public function viewsFormSubmit(&$form, FormStateInterface $form_state) {
     if ($form_state->get('step') == 'views_form_views_form') {
       // Filter only selected checkboxes.
       $selected = array_filter($form_state->getValue($this->options['id']));
       $entities = array();
+      $action = $this->actions[$form_state->getValue('action')];
+      $count = 0;
       foreach (array_intersect_key($this->view->result, $selected) as $row) {
         $entity = $this->getEntity($row);
+
+        // Skip execution if the user did not have access.
+        if (!$action->getPlugin()->access($entity, $this->view->getUser())) {
+          $this->drupalSetMessage($this->t('No access to execute %action on the @entity_type_label %entity_label.', [
+            '%action' => $action->label(),
+            '@entity_type_label' => $entity->getEntityType()->getLabel(),
+            '%entity_label' => $entity->label()
+          ]), 'error');
+          continue;
+        }
+
+        $count++;
+
         $entities[$entity->id()] = $entity;
       }
 
-      $action = $this->actions[$form_state->getValue('action')];
       $action->execute($entities);
 
       $operation_definition = $action->getPluginDefinition();
       if (!empty($operation_definition['confirm_form_route_name'])) {
-        $form_state->setRedirect($operation_definition['confirm_form_route_name']);
+        $options = array(
+          'query' => drupal_get_destination(),
+        );
+        $form_state->setRedirect($operation_definition['confirm_form_route_name'], array(), $options);
       }
 
-      $count = count(array_filter($form_state->getValue($this->options['id'])));
       if ($count) {
         drupal_set_message($this->formatPlural($count, '%action was applied to @count item.', '%action was applied to @count items.', array(
           '%action' => $action->label(),
@@ -299,7 +319,7 @@ class BulkForm extends FieldPluginBase {
   }
 
   /**
-   * Overrides \Drupal\views\Plugin\views\Plugin\field\FieldPluginBase::query().
+   * {@inheritdoc}
    */
   public function query() {
   }
@@ -309,6 +329,13 @@ class BulkForm extends FieldPluginBase {
    */
   public function clickSortable() {
     return FALSE;
+  }
+
+  /**
+   * Wraps drupal_set_message().
+   */
+  protected function drupalSetMessage($message = NULL, $type = 'status', $repeat = FALSE) {
+    drupal_set_message($message, $type, $repeat);
   }
 
 }

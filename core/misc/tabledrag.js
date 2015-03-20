@@ -60,9 +60,10 @@
     this.changed = false; // Whether anything in the entire table has changed.
     this.maxDepth = 0; // Maximum amount of allowed parenting.
     this.rtl = $(this.table).css('direction') === 'rtl' ? -1 : 1; // Direction of the table.
+    this.striping = $(this.table).data('striping') === 1;
 
     // Configure the scroll settings.
-    this.scrollSettings = { amount: 4, interval: 50, trigger: 70 };
+    this.scrollSettings = {amount: 4, interval: 50, trigger: 70};
     this.scrollInterval = null;
     this.scrollY = 0;
     this.windowHeight = 0;
@@ -309,7 +310,7 @@
   Drupal.tableDrag.prototype.makeDraggable = function (item) {
     var self = this;
     var $item = $(item);
-    //Add a class to the title link
+    // Add a class to the title link
     $item.find('td:first a').addClass('menu-item__link');
     // Create the handle.
     var handle = $('<a href="#" class="tabledrag-handle"><div class="handle">&nbsp;</div></a>').attr('title', Drupal.t('Drag to re-order'));
@@ -459,7 +460,9 @@
           $(self.oldRowElement).removeClass('drag-previous');
         }
         self.oldRowElement = item;
-        self.restripeTable();
+        if (self.striping === true) {
+          self.restripeTable();
+        }
         self.onDrag();
       }
 
@@ -556,7 +559,9 @@
           else {
             self.rowObject.swap('before', currentRow, self);
           }
-          self.restripeTable();
+          if (self.striping === true) {
+            self.restripeTable();
+          }
         }
       }
 
@@ -564,7 +569,7 @@
       if (self.indentEnabled) {
         var xDiff = self.currentPointerCoords.x - self.dragObject.indentPointerPos.x;
         // Set the number of indentations the pointer has been moved left or right.
-        var indentDiff = Math.round(xDiff / self.indentAmount * self.rtl);
+        var indentDiff = Math.round(xDiff / self.indentAmount);
         // Indent the row with our estimated diff, which may be further
         // restricted according to the rows around this row.
         var indentChange = self.rowObject.indent(indentDiff);
@@ -639,7 +644,7 @@
    */
   Drupal.tableDrag.prototype.pointerCoords = function (event) {
     if (event.pageX || event.pageY) {
-      return { x: event.pageX, y: event.pageY };
+      return {x: event.pageX, y: event.pageY};
     }
     return {
       x: event.clientX + document.body.scrollLeft - document.body.clientLeft,
@@ -654,7 +659,7 @@
   Drupal.tableDrag.prototype.getPointerOffset = function (target, event) {
     var docPos = $(target).offset();
     var pointerPos = this.pointerCoords(event);
-    return { x: pointerPos.x - docPos.left, y: pointerPos.y - docPos.top };
+    return {x: pointerPos.x - docPos.left, y: pointerPos.y - docPos.top};
   };
 
   /**
@@ -890,7 +895,13 @@
     var b = document.body;
 
     var windowHeight = this.windowHeight = window.innerHeight || (de.clientHeight && de.clientWidth !== 0 ? de.clientHeight : b.offsetHeight);
-    var scrollY = this.scrollY = (document.all ? (!de.scrollTop ? b.scrollTop : de.scrollTop) : (window.pageYOffset ? window.pageYOffset : window.scrollY));
+    var scrollY;
+    if (document.all) {
+      scrollY = this.scrollY = !de.scrollTop ? b.scrollTop : de.scrollTop;
+    }
+    else {
+      scrollY = this.scrollY = window.pageYOffset ? window.pageYOffset : window.scrollY;
+    }
     var trigger = this.scrollSettings.trigger;
     var delta = 0;
 
@@ -1120,7 +1131,7 @@
       }
     }
 
-    return { 'min': minIndent, 'max': maxIndent };
+    return {'min': minIndent, 'max': maxIndent};
   };
 
   /**

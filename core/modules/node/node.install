@@ -8,7 +8,6 @@
 use Drupal\Component\Utility\SafeMarkup;
 use Drupal\Component\Uuid\Uuid;
 use Drupal\Core\Url;
-use Drupal\Core\Language\Language;
 
 /**
  * Implements hook_requirements().
@@ -21,7 +20,7 @@ function node_requirements($phase) {
     // implement hook_node_grants().
     $grant_count = \Drupal::entityManager()->getAccessControlHandler('node')->countGrants();
     if ($grant_count != 1 || count(\Drupal::moduleHandler()->getImplementations('node_grants')) > 0) {
-      $value = format_plural($grant_count, 'One permission in use', '@count permissions in use', array('@count' => $grant_count));
+      $value = \Drupal::translation()->formatPlural($grant_count, 'One permission in use', '@count permissions in use', array('@count' => $grant_count));
     }
     else {
       $value = t('Disabled');
@@ -149,21 +148,8 @@ function node_install() {
 
 /**
  * Implements hook_uninstall().
- *
- * @see node_ranking()
- * @see _node_rankings()
  */
 function node_uninstall() {
-  // Delete node type variables.
-  $types = \Drupal::configFactory()->listAll('node.type.');
-  foreach ($types as $config_name) {
-    $type = \Drupal::config($config_name)->get('type');
-    if (\Drupal::moduleHandler()->moduleExists('language')) {
-      $key = language_get_default_configuration_settings_key('node', $type);
-      \Drupal::config('language.settings')->clear($key)->save();
-    }
-  }
-
   // Delete remaining general module variables.
   \Drupal::state()->delete('node.node_access_needs_rebuild');
 }

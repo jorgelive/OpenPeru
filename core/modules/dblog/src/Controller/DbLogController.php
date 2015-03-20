@@ -7,6 +7,7 @@
 
 namespace Drupal\dblog\Controller;
 
+use Drupal\Component\Utility\Html;
 use Drupal\Component\Utility\Unicode;
 use Drupal\Component\Utility\String;
 use Drupal\Component\Utility\Xss;
@@ -15,6 +16,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Datetime\DateFormatter;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Form\FormBuilderInterface;
+use Drupal\Core\Logger\RfcLogLevel;
 use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -90,14 +92,14 @@ class DbLogController extends ControllerBase {
    */
   public static function getLogLevelClassMap() {
     return array(
-      WATCHDOG_DEBUG => 'dblog-debug',
-      WATCHDOG_INFO => 'dblog-info',
-      WATCHDOG_NOTICE => 'dblog-notice',
-      WATCHDOG_WARNING => 'dblog-warning',
-      WATCHDOG_ERROR => 'dblog-error',
-      WATCHDOG_CRITICAL => 'dblog-critical',
-      WATCHDOG_ALERT => 'dblog-alert',
-      WATCHDOG_EMERGENCY => 'dblog-emergency',
+      RfcLogLevel::DEBUG => 'dblog-debug',
+      RfcLogLevel::INFO => 'dblog-info',
+      RfcLogLevel::NOTICE => 'dblog-notice',
+      RfcLogLevel::WARNING => 'dblog-warning',
+      RfcLogLevel::ERROR => 'dblog-error',
+      RfcLogLevel::CRITICAL => 'dblog-critical',
+      RfcLogLevel::ALERT => 'dblog-alert',
+      RfcLogLevel::EMERGENCY => 'dblog-emergency',
     );
   }
 
@@ -140,7 +142,7 @@ class DbLogController extends ControllerBase {
       $this->t('Message'),
       array(
         'data' => $this->t('User'),
-        'field' => 'u.name',
+        'field' => 'ufd.name',
         'class' => array(RESPONSIVE_PRIORITY_MEDIUM)),
       array(
         'data' => $this->t('Operations'),
@@ -160,6 +162,7 @@ class DbLogController extends ControllerBase {
       'variables',
       'link',
     ));
+    $query->leftJoin('users_field_data', 'ufd', 'w.uid = ufd.uid');
 
     if (!empty($filter['where'])) {
       $query->where($filter['where'], $filter['args']);
@@ -197,7 +200,7 @@ class DbLogController extends ControllerBase {
           Xss::filter($dblog->link),
         ),
         // Attributes for table row.
-        'class' => array(drupal_html_class('dblog-' . $dblog->type), $classes[$dblog->severity]),
+        'class' => array(Html::getClass('dblog-' . $dblog->type), $classes[$dblog->severity]),
       );
     }
 
@@ -231,7 +234,7 @@ class DbLogController extends ControllerBase {
   public function eventDetails($event_id) {
     $build = array();
     if ($dblog = $this->database->query('SELECT w.*, u.name, u.uid FROM {watchdog} w INNER JOIN {users_field_data} u ON w.uid = u.uid WHERE w.wid = :id AND u.default_langcode = 1', array(':id' => $event_id))->fetchObject()) {
-      $severity = watchdog_severity_levels();
+      $severity = RfcLogLevel::getLevels();
       $message = $this->formatMessage($dblog);
       $username = array(
         '#theme' => 'username',
@@ -252,11 +255,11 @@ class DbLogController extends ControllerBase {
         ),
         array(
           array('data' => $this->t('Location'), 'header' => TRUE),
-          _l($dblog->location, $dblog->location),
+          $this->l($dblog->location, $dblog->location ? Url::fromUri($dblog->location) : Url::fromRoute('<none>')),
         ),
         array(
           array('data' => $this->t('Referrer'), 'header' => TRUE),
-          _l($dblog->referer, $dblog->referer),
+          $this->l($dblog->referer, $dblog->referer ? Url::fromUri($dblog->referer) : Url::fromRoute('<none>')),
         ),
         array(
           array('data' => $this->t('Message'), 'header' => TRUE),

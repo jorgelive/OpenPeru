@@ -43,7 +43,11 @@ class FileWidgetAjaxController extends FormAjaxController {
     }
 
     try {
-      list($form, $form_state) = $this->getForm($request);
+      /** @var $ajaxForm \Drupal\system\FileAjaxForm */
+      $ajaxForm = $this->getForm($request);
+      $form = $ajaxForm->getForm();
+      $form_state = $ajaxForm->getFormState();
+      $commands = $ajaxForm->getCommands();
     }
     catch (HttpExceptionInterface $e) {
       // Invalid form_build_id.
@@ -58,7 +62,7 @@ class FileWidgetAjaxController extends FormAjaxController {
     $current_file_count = isset($current_element['#file_upload_delta']) ? $current_element['#file_upload_delta'] : 0;
 
     // Process user input. $form and $form_state are modified in the process.
-    drupal_process_form($form['#form_id'], $form, $form_state);
+    $this->formBuilder->processForm($form['#form_id'], $form, $form_state);
 
     // Retrieve the element to be rendered.
     $form = NestedArray::getValue($form, $form_parents);
@@ -75,12 +79,13 @@ class FileWidgetAjaxController extends FormAjaxController {
     $status_messages = array('#theme' => 'status_messages');
     $form['#prefix'] .= drupal_render($status_messages);
     $output = drupal_render($form);
-    drupal_process_attached($form);
-    $js = _drupal_add_js();
-    $settings = drupal_merge_js_settings($js['settings']['data']);
 
     $response = new AjaxResponse();
-    return $response->addCommand(new ReplaceCommand(NULL, $output, $settings));
+    $response->setAttachments($form['#attached']);
+    foreach ($commands as $command) {
+      $response->addCommand($command, TRUE);
+    }
+    return $response->addCommand(new ReplaceCommand(NULL, $output));
   }
 
   /**

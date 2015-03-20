@@ -14,11 +14,19 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Updater\Updater;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Configure update settings for this site.
  */
 class UpdateReady extends FormBase {
+
+  /**
+   * The root location under which updated projects will be saved.
+   *
+   * @var string
+   */
+  protected $root;
 
   /**
    * The module handler.
@@ -37,12 +45,15 @@ class UpdateReady extends FormBase {
   /**
    * Constructs a new UpdateReady object.
    *
+   * @param string $root
+   *   The root location under which updated projects will be saved.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The object that manages enabled modules in a Drupal installation.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state key value store.
    */
-  public function __construct(ModuleHandlerInterface $module_handler, StateInterface $state) {
+  public function __construct($root, ModuleHandlerInterface $module_handler, StateInterface $state) {
+    $this->root = $root;
     $this->moduleHandler = $module_handler;
     $this->state = $state;
   }
@@ -59,6 +70,7 @@ class UpdateReady extends FormBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
+      $container->get('update.root'),
       $container->get('module_handler'),
       $container->get('state')
     );
@@ -117,7 +129,7 @@ class UpdateReady extends FormBase {
       $project_real_location = NULL;
       foreach ($projects as $project => $url) {
         $project_location = $directory . '/' . $project;
-        $updater = Updater::factory($project_location);
+        $updater = Updater::factory($project_location, $this->root);
         $project_real_location = drupal_realpath($project_location);
         $updates[] = array(
           'project' => $project,
@@ -133,8 +145,11 @@ class UpdateReady extends FormBase {
       // and invoke update_authorize_run_update() directly.
       if (fileowner($project_real_location) == fileowner(conf_path())) {
         $this->moduleHandler->loadInclude('update', 'inc', 'update.authorize');
-        $filetransfer = new Local(DRUPAL_ROOT);
-        update_authorize_run_update($filetransfer, $updates);
+        $filetransfer = new Local($this->root);
+        $response = update_authorize_run_update($filetransfer, $updates);
+        if ($response instanceof Response) {
+          $form_state->setResponse($response);
+        }
       }
       // Otherwise, go through the regular workflow to prompt for FTP/SSH
       // credentials and invoke update_authorize_run_update() indirectly with

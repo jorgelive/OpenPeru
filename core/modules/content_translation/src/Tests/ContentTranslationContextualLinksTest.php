@@ -9,6 +9,7 @@ namespace Drupal\content_translation\Tests;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\language\Entity\ConfigurableLanguage;
+use Drupal\language\Entity\ContentLanguageSettings;
 use Drupal\node\Entity\NodeType;
 use Drupal\simpletest\WebTestBase;
 
@@ -64,7 +65,7 @@ class ContentTranslationContextualLinksTest extends WebTestBase {
   protected function setUp() {
     parent::setUp();
     // Set up an additional language.
-    $this->langcodes = array(language_default()->id, 'es');
+    $this->langcodes = array(\Drupal::languageManager()->getDefaultLanguage()->getId(), 'es');
     ConfigurableLanguage::createFromLangcode('es')->save();
 
     // Create a content type.
@@ -73,7 +74,7 @@ class ContentTranslationContextualLinksTest extends WebTestBase {
 
     // Enable translation for the current entity type and ensure the change is
     // picked up.
-    content_translation_set_config('node', $this->bundle, 'enabled', TRUE);
+    \Drupal::service('content_translation.manager')->setEnabled('node', $this->bundle, TRUE);
     drupal_static_reset();
     \Drupal::entityManager()->clearCachedBundles();
     \Drupal::service('router.builder')->rebuild();
@@ -100,11 +101,10 @@ class ContentTranslationContextualLinksTest extends WebTestBase {
       ->save();
 
     // Enable content translation.
-    $configuration = array(
-      'langcode' => language_default()->id,
-      'language_show' => TRUE,
-    );
-    language_save_default_configuration('node', $this->bundle, $configuration);
+    ContentLanguageSettings::loadByEntityTypeBundle('node', $this->bundle)
+      ->setLanguageAlterable(TRUE)
+      ->setDefaultLangcode(\Drupal::languageManager()->getDefaultLanguage()->getId())
+      ->save();
     // Create a translator user.
     $permissions = array(
       'access contextual links',
@@ -131,7 +131,7 @@ class ContentTranslationContextualLinksTest extends WebTestBase {
     $response = $this->renderContextualLinks(array('node:node=1:'), 'node/' . $node->id());
     $this->assertResponse(200);
     $json = Json::decode($response);
-    $this->drupalSetContent($json['node:node=1:']);
+    $this->setRawContent($json['node:node=1:']);
     $this->assertLinkByHref($translate_link, 0, 'The contextual link to translate the node is shown.');
 
     // Check that the link leads to the translate page.

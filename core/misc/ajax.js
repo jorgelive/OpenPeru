@@ -9,7 +9,7 @@
    * page. The request returns an array of commands encoded in JSON, which is
    * then executed to make any changes that are necessary to the page.
    *
-   * Drupal uses this file to enhance form elements with #ajax['path'] and
+   * Drupal uses this file to enhance form elements with #ajax['url'] and
    * #ajax['wrapper'] properties. If set, this file will automatically be included
    * to provide Ajax capabilities.
    */
@@ -44,7 +44,7 @@
       $('.use-ajax').once('ajax', function () {
         var element_settings = {};
         // Clicked links look better with the throbber than the progress bar.
-        element_settings.progress = { 'type': 'throbber' };
+        element_settings.progress = {'type': 'throbber'};
 
         // For anchor tags, these will go to the target of the anchor rather
         // than the usual location.
@@ -54,8 +54,8 @@
         }
         element_settings.accepts = $(this).data('accepts');
         element_settings.dialog = $(this).data('dialog-options');
-        var base = $(this).attr('id');
-        Drupal.ajax[base] = new Drupal.ajax(base, this, element_settings);
+        var baseUseAjax = $(this).attr('id');
+        Drupal.ajax[baseUseAjax] = new Drupal.ajax(baseUseAjax, this, element_settings);
       });
 
       // This class means to submit the form to the action using Ajax.
@@ -71,10 +71,10 @@
         // Form buttons use the 'click' event rather than mousedown.
         element_settings.event = 'click';
         // Clicked form buttons look better with the throbber than the progress bar.
-        element_settings.progress = { 'type': 'throbber' };
+        element_settings.progress = {'type': 'throbber'};
 
-        var base = $(this).attr('id');
-        Drupal.ajax[base] = new Drupal.ajax(base, this, element_settings);
+        var baseUseAjaxSubmit = $(this).attr('id');
+        Drupal.ajax[baseUseAjaxSubmit] = new Drupal.ajax(baseUseAjaxSubmit, this, element_settings);
       });
     }
   };
@@ -106,7 +106,7 @@
     // Again, we don't have a way to know for sure whether accessing
     // xmlhttp.responseText is going to throw an exception. So we'll catch it.
     try {
-      responseText = "\n" + Drupal.t("ResponseText: !responseText", {'!responseText': $.trim(xmlhttp.responseText) });
+      responseText = "\n" + Drupal.t("ResponseText: !responseText", {'!responseText': $.trim(xmlhttp.responseText)});
     }
     catch (e) {}
 
@@ -384,21 +384,12 @@
     // Allow Drupal to return new JavaScript and CSS files to load without
     // returning the ones already loaded.
     // @see \Drupal\Core\Theme\AjaxBasePageNegotiator
-    // @see drupal_get_css()
-    // @see drupal_get_js()
+    // @see \Drupal\Core\Asset\LibraryDependencyResolverInterface::getMinimalRepresentativeSubset()
+    // @see system_js_settings_alter()
     var pageState = drupalSettings.ajaxPageState;
     options.data['ajax_page_state[theme]'] = pageState.theme;
     options.data['ajax_page_state[theme_token]'] = pageState.theme_token;
-    for (var cssFile in pageState.css) {
-      if (pageState.css.hasOwnProperty(cssFile)) {
-        options.data['ajax_page_state[css][' + cssFile + ']'] = 1;
-      }
-    }
-    for (var jsFile in pageState.js) {
-      if (pageState.js.hasOwnProperty(jsFile)) {
-        options.data['ajax_page_state[js][' + jsFile + ']'] = 1;
-      }
-    }
+    options.data['ajax_page_state[libraries]'] = pageState.libraries;
   };
 
   /**
@@ -716,6 +707,13 @@
         .removeClass('odd even')
         .filter(':even').addClass('odd').end()
         .filter(':odd').addClass('even');
+    },
+
+    /**
+     * Command to update a form's build ID.
+     */
+    update_build_id: function (ajax, response, status) {
+      $('input[name="form_build_id"][value="' + response.old + '"]').val(response.new);
     },
 
     /**

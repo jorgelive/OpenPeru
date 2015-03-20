@@ -11,6 +11,7 @@ use Drupal\Core\Config\Entity\ConfigEntityListBuilder;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -118,7 +119,7 @@ class EntityDisplayModeListBuilder extends ConfigEntityListBuilder {
       $table['#rows']['_add_new'][] = array(
         'data' => array(
           '#type' => 'link',
-          '#href' => "admin/structure/display-modes/$short_type/add/$entity_type",
+          '#url' => Url::fromRoute($short_type == 'view' ? 'entity.entity_view_mode.add_form' : 'entity.entity_form_mode.add_form', ['entity_type_id' => $entity_type]),
           '#title' => t('Add new %label @entity-type', array('%label' => $this->entityTypes[$entity_type]->getLabel(), '@entity-type' => $this->entityType->getLowercaseLabel())),
           '#options' => array(
             'html' => TRUE,

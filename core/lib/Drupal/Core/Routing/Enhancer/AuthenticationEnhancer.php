@@ -10,8 +10,8 @@ namespace Drupal\Core\Routing\Enhancer;
 use Drupal\Core\Authentication\AuthenticationManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Session\AnonymousUserSession;
-use Symfony\Cmf\Component\Routing\Enhancer\RouteEnhancerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Route;
 use Symfony\Cmf\Component\Routing\RouteObjectInterface;
 
 /**
@@ -66,13 +66,16 @@ class AuthenticationEnhancer implements RouteEnhancerInterface {
         $anonymous_user = new AnonymousUserSession();
 
         $this->currentUser->setAccount($anonymous_user);
-
-        // The global $user object is included for backward compatibility only
-        // and should be considered deprecated.
-        // @todo Remove this line once global $user is no longer used.
-        $GLOBALS['user'] = $anonymous_user;
       }
     }
     return $defaults;
   }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function applies(Route $route) {
+    return TRUE;
+  }
+
 }

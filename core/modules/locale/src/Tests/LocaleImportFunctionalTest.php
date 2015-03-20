@@ -55,7 +55,7 @@ class LocaleImportFunctionalTest extends WebTestBase {
 
     // Enable import of translations. By default this is disabled for automated
     // tests.
-    \Drupal::config('locale.settings')
+    $this->config('locale.settings')
       ->set('translation.import_enabled', TRUE)
       ->save();
   }
@@ -68,7 +68,7 @@ class LocaleImportFunctionalTest extends WebTestBase {
     $this->importPoFile($this->getPoFile(), array(
       'langcode' => 'fr',
     ));
-    \Drupal::config('locale.settings');
+    $this->config('locale.settings');
     // The import should automatically create the corresponding language.
     $this->assertRaw(t('The language %language has been created.', array('%language' => 'French')), 'The language has been automatically created.');
 
@@ -336,12 +336,40 @@ class LocaleImportFunctionalTest extends WebTestBase {
   }
 
   /**
+   * Tests .po file import with user.settings configuration.
+   */
+  public function testConfigtranslationImportingPoFile() {
+    // Set the language code.
+    $langcode = 'de';
+
+    // Import a .po file to translate.
+    $this->importPoFile($this->getPoFileWithConfigDe(), array(
+      'langcode' => $langcode));
+
+    // Check that the 'Anonymous' string is translated.
+    $config = \Drupal::languageManager()->getLanguageConfigOverride($langcode, 'user.settings');
+    $this->assertEqual($config->get('anonymous'), 'Anonymous German');
+  }
+
+  /**
+   * Test the translation are imported when a new language is created.
+   */
+  public function testCreatedLanguageTranslation() {
+    // Import a .po file to add de language.
+    $this->importPoFile($this->getPoFileWithConfigDe(), array('langcode' => 'de'));
+
+    // Get the language.entity.de label and check it's been translated.
+    $override = \Drupal::languageManager()->getLanguageConfigOverride('de', 'language.entity.de');
+    $this->assertEqual($override->get('label'), 'Deutsch');
+  }
+
+  /**
    * Helper function: import a standalone .po file in a given language.
    *
-   * @param $contents
+   * @param string $contents
    *   Contents of the .po file to import.
-   * @param $options
-   *   Additional options to pass to the translation import form.
+   * @param array $options
+   *   (optional) Additional options to pass to the translation import form.
    */
   public function importPoFile($contents, array $options = array()) {
     $name = tempnam('temporary://', "po_") . '.po';
@@ -509,8 +537,8 @@ EOF;
    * Helper function that returns a .po file with context.
    */
   public function getPoFileWithContext() {
-    // Croatian (code hr) is one the the languages that have a different
-    // form for the full name and the abbreviated name for the month May.
+    // Croatian (code hr) is one of the languages that have a different
+    // form for the full name and the abbreviated name for the month of May.
     return <<< EOF
 msgid ""
 msgstr ""
@@ -592,4 +620,25 @@ msgstr "Névtelen felhasználó"
 EOF;
   }
 
+  /**
+   * Helper function that returns a .po file with configuration translations.
+   */
+  public function getPoFileWithConfigDe() {
+    return <<< EOF
+msgid ""
+msgstr ""
+"Project-Id-Version: Drupal 8\\n"
+"MIME-Version: 1.0\\n"
+"Content-Type: text/plain; charset=UTF-8\\n"
+"Content-Transfer-Encoding: 8bit\\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\\n"
+
+msgid "Anonymous"
+msgstr "Anonymous German"
+
+msgid "German"
+msgstr "Deutsch"
+
+EOF;
+  }
 }

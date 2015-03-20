@@ -18,7 +18,7 @@ views.argument.field_list_string:
 
 views.field.field:
   type: views_field
-  label: 'Log event message'
+  label: 'Views entity field handler'
   mapping:
     click_sort_column:
       type: string
@@ -26,23 +26,26 @@ views.field.field:
     type:
       type: string
       label: 'Formatter'
-    field_api_classes:
-      type: boolean
-      label: 'Use field template'
+    settings:
+      label: 'Settings'
+      type: field.formatter.settings.[%parent.type]
+    group_column:
+      type: string
+      label: 'Group by column'
+    group_columns:
+      type: sequence
+      label: 'Group by columns'
+      sequence:
+        - type: string
+          label: 'Column'
     group_rows:
       type: boolean
       label: 'Display all values in the same row'
-    multi_type:
-      type: string
-      label: 'Display type'
-    separator:
-      type: label
-      label: 'Separator'
     delta_limit:
-      type: string
+      type: integer
       label: 'Field'
     delta_offset:
-      type: string
+      type: integer
       label: 'Offset'
     delta_reversed:
       type: boolean
@@ -50,6 +53,15 @@ views.field.field:
     delta_first_last:
       type: boolean
       label: 'First and last only'
+    multi_type:
+      type: string
+      label: 'Display type'
+    separator:
+      type: label
+      label: 'Separator'
+    field_api_classes:
+      type: boolean
+      label: 'Use field template'
 
 views.filter.field_list:
   type: views.filter.many_to_one

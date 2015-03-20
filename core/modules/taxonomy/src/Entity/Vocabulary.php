@@ -8,7 +8,6 @@
 namespace Drupal\taxonomy\Entity;
 
 use Drupal\Core\Config\Entity\ConfigEntityBundleBase;
-use Drupal\Core\Config\Entity\ThirdPartySettingsTrait;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\taxonomy\VocabularyInterface;
 
@@ -36,37 +35,37 @@ use Drupal\taxonomy\VocabularyInterface;
  *     "weight" = "weight"
  *   },
  *   links = {
- *     "add-form" = "entity.taxonomy_term.add_form",
- *     "delete-form" = "entity.taxonomy_vocabulary.delete_form",
- *     "reset-form" = "entity.taxonomy_vocabulary.reset_form",
- *     "overview-form" = "entity.taxonomy_vocabulary.overview_form",
- *     "edit-form" = "entity.taxonomy_vocabulary.edit_form"
+ *     "add-form" = "/admin/structure/taxonomy/manage/{taxonomy_vocabulary}/add",
+ *     "delete-form" = "/admin/structure/taxonomy/manage/{taxonomy_vocabulary}/delete",
+ *     "reset-form" = "/admin/structure/taxonomy/manage/{taxonomy_vocabulary}/reset",
+ *     "overview-form" = "/admin/structure/taxonomy/manage/{taxonomy_vocabulary}/overview",
+ *     "edit-form" = "/admin/structure/taxonomy/manage/{taxonomy_vocabulary}",
+ *     "collection" = "/admin/structure/taxonomy",
  *   }
  * )
  */
 class Vocabulary extends ConfigEntityBundleBase implements VocabularyInterface {
-  use ThirdPartySettingsTrait;
 
   /**
    * The taxonomy vocabulary ID.
    *
    * @var string
    */
-  public $vid;
+  protected $vid;
 
   /**
    * Name of the vocabulary.
    *
    * @var string
    */
-  public $name;
+  protected $name;
 
   /**
    * Description of the vocabulary.
    *
    * @var string
    */
-  public $description;
+  protected $description;
 
   /**
    * The type of hierarchy allowed within the vocabulary.
@@ -78,20 +77,42 @@ class Vocabulary extends ConfigEntityBundleBase implements VocabularyInterface {
    *
    * @var integer
    */
-  public $hierarchy = TAXONOMY_HIERARCHY_DISABLED;
+  protected $hierarchy = TAXONOMY_HIERARCHY_DISABLED;
 
   /**
    * The weight of this vocabulary in relation to other vocabularies.
    *
    * @var integer
    */
-  public $weight = 0;
+  protected $weight = 0;
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getHierarchy() {
+    return $this->hierarchy;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setHierarchy($hierarchy) {
+    $this->hierarchy = $hierarchy;
+    return $this;
+  }
 
   /**
    * {@inheritdoc}
    */
   public function id() {
     return $this->vid;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getDescription() {
+    return $this->description;
   }
 
   /**
@@ -116,12 +137,14 @@ class Vocabulary extends ConfigEntityBundleBase implements VocabularyInterface {
       foreach ($field_storages as $field_storage) {
         $update_storage = FALSE;
 
-        foreach ($field_storage->settings['allowed_values'] as &$value) {
+        $allowed_values = $field_storage->getSetting('allowed_values');
+        foreach ($allowed_values as &$value) {
           if ($value['vocabulary'] == $this->getOriginalId()) {
             $value['vocabulary'] = $this->id();
             $update_storage = TRUE;
           }
         }
+        $field_storage->setSetting('allowed_values', $allowed_values);
 
         if ($update_storage) {
           $field_storage->save();
@@ -165,14 +188,17 @@ class Vocabulary extends ConfigEntityBundleBase implements VocabularyInterface {
       $modified_storage = FALSE;
       // Term reference fields may reference terms from more than one
       // vocabulary.
-      foreach ($field_storage->settings['allowed_values'] as $key => $allowed_value) {
+      foreach ($field_storage->getSetting('allowed_values') as $key => $allowed_value) {
         if (isset($vocabularies[$allowed_value['vocabulary']])) {
-          unset($field_storage->settings['allowed_values'][$key]);
+          $allowed_values = $field_storage->getSetting('allowed_values');
+          unset($allowed_values[$key]);
+          $field_storage->setSetting('allowed_values', $allowed_values);
           $modified_storage = TRUE;
         }
       }
       if ($modified_storage) {
-        if (empty($field_storage->settings['allowed_values'])) {
+        $allowed_values = $field_storage->getSetting('allowed_values');
+        if (empty($allowed_values)) {
           $field_storage->delete();
         }
         else {

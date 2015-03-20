@@ -7,6 +7,7 @@
 
 namespace Drupal\system\Tests\Entity;
 
+use Drupal\Component\Utility\Unicode;
 use Drupal\Core\Database\Database;
 use Drupal\Core\Entity\Exception\FieldStorageDefinitionUpdateForbiddenException;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -131,13 +132,13 @@ class FieldSqlStorageTest extends EntityUnitTestBase {
       for ($delta = 0; $delta <= $this->field_cardinality; $delta++) {
         $value = mt_rand(1, 127);
         $values[$revision_id][] = $value;
-        $query->values(array($bundle, 0, $entity->id(), $revision_id, $delta, $entity->language()->id, $value));
+        $query->values(array($bundle, 0, $entity->id(), $revision_id, $delta, $entity->language()->getId(), $value));
       }
       $query->execute();
     }
     $query = db_insert($this->table)->fields($columns);
     foreach ($values[$revision_id] as $delta => $value) {
-      $query->values(array($bundle, 0, $entity->id(), $revision_id, $delta, $entity->language()->id, $value));
+      $query->values(array($bundle, 0, $entity->id(), $revision_id, $delta, $entity->language()->getId(), $value));
     }
     $query->execute();
 
@@ -201,7 +202,7 @@ class FieldSqlStorageTest extends EntityUnitTestBase {
         'deleted' => 0,
         'entity_id' => $entity->id(),
         'revision_id' => $entity->getRevisionId(),
-        'langcode' => $entity->language()->id,
+        'langcode' => $entity->language()->getId(),
         'delta' => $delta,
         $this->field_name . '_value' => $values[$delta]['value'],
       );
@@ -224,7 +225,7 @@ class FieldSqlStorageTest extends EntityUnitTestBase {
         'deleted' => 0,
         'entity_id' => $entity->id(),
         'revision_id' => $entity->getRevisionId(),
-        'langcode' => $entity->language()->id,
+        'langcode' => $entity->language()->getId(),
         'delta' => $delta,
         $this->field_name . '_value' => $values[$delta]['value'],
       );
@@ -252,7 +253,7 @@ class FieldSqlStorageTest extends EntityUnitTestBase {
           'deleted' => 0,
           'entity_id' => $entity->id(),
           'revision_id' => $revision_id,
-          'langcode' => $entity->language()->id,
+          'langcode' => $entity->language()->getId(),
           'delta' => $delta,
           $this->field_name . '_value' => $values[$delta]['value'],
         );
@@ -276,7 +277,7 @@ class FieldSqlStorageTest extends EntityUnitTestBase {
     $storage = $this->container->get('entity.manager')->getStorage($entity_type);
 
     // Create two fields and generate random values.
-    $name_base = drupal_strtolower($this->randomMachineName(FieldStorageConfig::NAME_MAX_LENGTH - 1));
+    $name_base = Unicode::strtolower($this->randomMachineName(FieldStorageConfig::NAME_MAX_LENGTH - 1));
     $field_names = array();
     $values = array();
     for ($i = 0; $i < 2; $i++) {
@@ -331,7 +332,7 @@ class FieldSqlStorageTest extends EntityUnitTestBase {
     $entity->save();
 
     // Attempt to update the field in a way that would work without data.
-    $field_storage->settings['scale'] = 3;
+    $field_storage->setSetting('scale', 3);
     try {
       $field_storage->save();
       $this->fail(t('Cannot update field schema with data.'));
@@ -356,7 +357,7 @@ class FieldSqlStorageTest extends EntityUnitTestBase {
 
     // Attempt to update the field in a way that would break the storage.
     $prior_field_storage = $field_storage;
-    $field_storage->settings['max_length'] = -1;
+    $field_storage->setSetting('max_length', -1);
     try {
       $field_storage->save();
       $this->fail(t('Update succeeded.'));
@@ -411,14 +412,14 @@ class FieldSqlStorageTest extends EntityUnitTestBase {
     $entity->save();
 
     // Add an index.
-    $field_storage->indexes = array('value' => array(array('value', 255)));
+    $field_storage->setIndexes(['value' => [['value', 255]]]);
     $field_storage->save();
     foreach ($tables as $table) {
       $this->assertTrue(Database::getConnection()->schema()->indexExists($table, "{$field_name}_value"), t("Index on value created in @table", array('@table' => $table)));
     }
 
     // Add a different index, removing the existing custom one.
-    $field_storage->indexes = array('value_format' => array(array('value', 127), array('format', 127)));
+    $field_storage->setIndexes(['value_format' => [['value', 127], ['format', 127]]]);
     $field_storage->save();
     foreach ($tables as $table) {
       $this->assertTrue(Database::getConnection()->schema()->indexExists($table, "{$field_name}_value_format"), t("Index on value_format created in @table", array('@table' => $table)));
@@ -454,7 +455,7 @@ class FieldSqlStorageTest extends EntityUnitTestBase {
 
     // Update the field settings, it should update the foreign key definition too.
     $foreign_key_name = 'color';
-    $field_storage->settings['foreign_key_name'] = $foreign_key_name;
+    $field_storage->setSetting('foreign_key_name', $foreign_key_name);
     $field_storage->save();
     // Reload the field schema after the update.
     $schema = $field_storage->getSchema();

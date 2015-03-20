@@ -77,8 +77,8 @@ function entity_load($entity_type, $id, $reset = FALSE) {
  * @param int $revision_id
  *   The id of the entity to load.
  *
- * @return \Drupal\Core\Entity\EntityInterface
- *   The entity object, or FALSE if there is no entity with the given revision
+ * @return \Drupal\Core\Entity\EntityInterface|null
+ *   The entity object, or NULL if there is no entity with the given revision
  *   id.
  *
  * @see \Drupal\Core\Entity\EntityManagerInterface
@@ -182,7 +182,7 @@ function entity_load_multiple($entity_type, array $ids = NULL, $reset = FALSE) {
  *
  * @return array
  *   An array of entity objects indexed by their IDs. Returns an empty array if
- *   no matching entities found.
+ *   no matching entities are found.
  */
 function entity_load_multiple_by_properties($entity_type, array $values) {
   return \Drupal::entityManager()

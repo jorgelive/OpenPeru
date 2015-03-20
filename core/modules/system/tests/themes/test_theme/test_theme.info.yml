@@ -12,18 +12,17 @@ name: 'Test theme'
 type: theme
 description: 'Theme for testing the theme system'
 # version: VERSION
+base theme: classy
 # core: 8.x
 stylesheets-remove:
   - system.module.css
-settings:
-  theme_test_setting: 'default value'
 regions:
   content: Content
   left: Left
   right: Right
 
-# Information added by Drupal.org packaging script on 2014-10-01
-version: '8.0.0-beta1'
+# Information added by Drupal.org packaging script on 2015-02-25
+version: '8.0.0-beta7'
 core: '8.x'
 project: 'drupal'
-datestamp: 1412147204
+datestamp: 1424875577

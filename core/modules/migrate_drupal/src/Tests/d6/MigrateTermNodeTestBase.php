@@ -7,12 +7,12 @@
 
 namespace Drupal\migrate_drupal\Tests\d6;
 
-use Drupal\migrate_drupal\Tests\MigrateDrupalTestBase;
+use Drupal\migrate_drupal\Tests\d6\MigrateDrupal6TestBase;
 
 /**
  * Base class for Taxonomy/Node migration tests.
  */
-abstract class MigrateTermNodeTestBase extends MigrateDrupalTestBase {
+abstract class MigrateTermNodeTestBase extends MigrateDrupal6TestBase {
 
   /**
    * {@inheritdoc}
@@ -87,10 +87,15 @@ abstract class MigrateTermNodeTestBase extends MigrateDrupalTestBase {
       }
     }
     $dumps = array(
-      $this->getDumpDirectory() . '/Drupal6Node.php',
-      $this->getDumpDirectory() . '/Drupal6TermNode.php',
-      $this->getDumpDirectory() . '/Drupal6TaxonomyTerm.php',
-      $this->getDumpDirectory() . '/Drupal6TaxonomyVocabulary.php',
+      $this->getDumpDirectory() . '/Node.php',
+      $this->getDumpDirectory() . '/NodeRevisions.php',
+      $this->getDumpDirectory() . '/ContentTypeStory.php',
+      $this->getDumpDirectory() . '/ContentTypeTestPlanet.php',
+      $this->getDumpDirectory() . '/TermNode.php',
+      $this->getDumpDirectory() . '/TermHierarchy.php',
+      $this->getDumpDirectory() . '/TermData.php',
+      $this->getDumpDirectory() . '/Vocabulary.php',
+      $this->getDumpDirectory() . '/VocabularyNodeTypes.php',
     );
     $this->loadDumps($dumps);
   }

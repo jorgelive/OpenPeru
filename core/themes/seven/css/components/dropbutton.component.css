@@ -25,17 +25,46 @@
 /**
  * Overwrite Sevens button styling.
  */
-.dropbutton-widget .button {
+.js .dropbutton-widget .button {
   background: transparent;
   border: 0;
   border-radius: 0;
   box-shadow: none;
 }
-.dropbutton-multiple .dropbutton {
+.js .dropbutton-multiple .dropbutton {
   border-right: 0; /* LTR */
 }
-[dir="rtl"] .dropbutton-multiple .dropbutton {
+[dir="rtl"].js .dropbutton-multiple .dropbutton {
   border-left: 0;
+}
+
+/**
+ * Show dropbutton elements as buttons when javascript is disabled
+ */
+.dropbutton {
+  margin: 0;
+  padding: 0;
+  list-style-type: none;
+}
+.dropbutton li + li {
+  margin-top: 10px;
+}
+.js .dropbutton li {
+  margin-bottom: 0;
+  margin-right: 0;
+}
+.js .dropbutton li + li {
+  margin-top: 0;
+}
+
+@media screen and (min-width: 37.5625em) { /* 601px */
+  .dropbutton li {
+    display: inline-block;
+  }
+  .dropbutton li + li {
+    margin-left: 1em;
+    margin-top: 0;
+  }
 }
 
 /**
@@ -122,6 +151,8 @@
  */
 .dropbutton-single .dropbutton-widget {
   border: 0;
+  position: static;
+  display: inline-block;
 }
 .dropbutton-single .dropbutton-action a {
   padding: 4px 1.5em;
@@ -139,8 +170,8 @@
   -webkit-font-smoothing: antialiased;
   width: auto!important;
 }
-.dropbutton-single .dropbutton-action a:focus,
-.dropbutton-single .dropbutton-action a:hover {
+.dropbutton-single .dropbutton-action a:hover,
+.dropbutton-single .dropbutton-action a:focus {
   background-color: #f9f8f6;
   background-image: -webkit-linear-gradient(top, #fcfcfa, #e9e9dd);
   background-image: linear-gradient(to bottom, #fcfcfa, #e9e9dd);
@@ -148,7 +179,8 @@
   text-decoration: none;
   outline: none;
 }
-.dropbutton-single .dropbutton-action a:hover {
+.dropbutton-single .dropbutton-action a:hover,
+.dropbutton-single .dropbutton-action a:focus {
   box-shadow: 0 1px 2px hsla(0, 0%, 0%, 0.125);
 }
 .dropbutton-single .dropbutton-action a:active {
@@ -221,6 +253,7 @@
 }
 .js .form-actions .dropbutton-widget {
   border-color: #1e5c90;
+  background-color: #0071b8;
   background-image: -webkit-linear-gradient(top, #007bc6, #0071b8);
   background-image: linear-gradient(to bottom, #007bc6, #0071b8);
   text-shadow: 0 1px hsla(0, 0%, 0%, 0.5);

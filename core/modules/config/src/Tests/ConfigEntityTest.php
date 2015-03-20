@@ -12,6 +12,7 @@ use Drupal\Core\Entity\EntityMalformedException;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Config\Entity\ConfigEntityStorage;
 use Drupal\Core\Config\Entity\Exception\ConfigEntityIdLengthException;
+use Drupal\Core\Url;
 use Drupal\simpletest\WebTestBase;
 
 /**
@@ -37,7 +38,7 @@ class ConfigEntityTest extends WebTestBase {
    * Tests CRUD operations.
    */
   function testCRUD() {
-    $default_langcode = \Drupal::languageManager()->getDefaultLanguage()->id;
+    $default_langcode = \Drupal::languageManager()->getDefaultLanguage()->getId();
     // Verify default properties on a newly created empty entity.
     $empty = entity_create('config_test');
     $this->assertTrue($empty->uuid());
@@ -122,7 +123,7 @@ class ConfigEntityTest extends WebTestBase {
     }
 
     // The entity path can only be checked after saving.
-    $this->assertIdentical($config_test->getSystemPath(), 'admin/structure/config_test/manage/' . $expected['id']);
+    $this->assertIdentical($config_test->url(), Url::fromRoute('entity.config_test.edit_form', ['config_test' => $expected['id']])->toString());
 
     // Verify that the correct status is returned and properties did not change.
     $this->assertIdentical($status, SAVED_NEW);
@@ -240,7 +241,7 @@ class ConfigEntityTest extends WebTestBase {
     $label3 = $this->randomMachineName();
     $message_insert = format_string('%label configuration has been created.', array('%label' => $label1));
     $message_update = format_string('%label configuration has been updated.', array('%label' => $label2));
-    $message_delete = format_string('%label configuration has been deleted.', array('%label' => $label2));
+    $message_delete = format_string('The test configuration %label has been deleted.', array('%label' => $label2));
 
     // Create a configuration entity.
     $edit = array(

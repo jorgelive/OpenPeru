@@ -8,6 +8,7 @@ namespace Drupal\Core\Access;
 
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheableInterface;
+use Drupal\Core\Config\ConfigBase;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Session\AccountInterface;
 
@@ -216,10 +217,15 @@ abstract class AccessResult implements AccessResultInterface, CacheableInterface
 
   /**
    * {@inheritdoc}
-   *
-   * AccessResult objects solely return cache context tokens, no static strings.
    */
   public function getCacheKeys() {
+    return [];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheContexts() {
     sort($this->contexts);
     return $this->contexts;
   }
@@ -328,22 +334,22 @@ abstract class AccessResult implements AccessResultInterface, CacheableInterface
   }
 
   /**
-   * Convenience method, adds the "cache_context.user.roles" cache context.
+   * Convenience method, adds the "user.roles" cache context.
    *
    * @return $this
    */
   public function cachePerRole() {
-    $this->addCacheContexts(array('cache_context.user.roles'));
+    $this->addCacheContexts(array('user.roles'));
     return $this;
   }
 
   /**
-   * Convenience method, adds the "cache_context.user" cache context.
+   * Convenience method, adds the "user" cache context.
    *
    * @return $this
    */
   public function cachePerUser() {
-    $this->addCacheContexts(array('cache_context.user'));
+    $this->addCacheContexts(array('user'));
     return $this;
   }
 
@@ -356,7 +362,20 @@ abstract class AccessResult implements AccessResultInterface, CacheableInterface
    * @return $this
    */
   public function cacheUntilEntityChanges(EntityInterface $entity) {
-    $this->addCacheTags($entity->getCacheTag());
+    $this->addCacheTags($entity->getCacheTags());
+    return $this;
+  }
+
+  /**
+   * Convenience method, adds the configuration object's cache tag.
+   *
+   * @param \Drupal\Core\Config\ConfigBase $configuration
+   *   The configuration object whose cache tag to set on the access result.
+   *
+   * @return $this
+   */
+  public function cacheUntilConfigurationChanges(ConfigBase $configuration) {
+    $this->addCacheTags($configuration->getCacheTags());
     return $this;
   }
 
@@ -445,7 +464,7 @@ abstract class AccessResult implements AccessResultInterface, CacheableInterface
   public function inheritCacheability(AccessResultInterface $other) {
     if ($other instanceof CacheableInterface) {
       $this->setCacheable($other->isCacheable());
-      $this->addCacheContexts($other->getCacheKeys());
+      $this->addCacheContexts($other->getCacheContexts());
       $this->addCacheTags($other->getCacheTags());
       // Use the lowest max-age.
       if ($this->getCacheMaxAge() === Cache::PERMANENT) {

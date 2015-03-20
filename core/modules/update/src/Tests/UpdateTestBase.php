@@ -21,12 +21,37 @@
 
 namespace Drupal\update\Tests;
 
+use Drupal\Core\DrupalKernel;
+use Drupal\Core\Url;
 use Drupal\simpletest\WebTestBase;
 
 /**
  * Defines some shared functions used by all update tests.
  */
 abstract class UpdateTestBase extends WebTestBase {
+
+  protected function setUp() {
+    parent::setUp();
+
+    // Change the root path which Update Manager uses to install and update
+    // projects to be inside the testing site directory. See
+    // \Drupal\updateUpdateRootFactory::get() for equivalent changes to the
+    // test child site.
+    $request = \Drupal::request();
+    $update_root = $this->container->get('update.root') . '/' . DrupalKernel::findSitePath($request);
+    $this->container->set('update.root', $update_root);
+    \Drupal::setContainer($this->container);
+
+    // Create the directories within the root path within which the Update
+    // Manager will install projects.
+    foreach (drupal_get_updaters() as $updater_info) {
+      $updater = $updater_info['class'];
+      $install_directory = $update_root . '/' . $updater::getRootDirectoryRelativePath();
+      if (!is_dir($install_directory)) {
+        mkdir($install_directory);
+      }
+    }
+  }
 
   /**
    * Refreshes the update status based on the desired available update scenario.
@@ -38,14 +63,14 @@ abstract class UpdateTestBase extends WebTestBase {
    *   (optional) A string containing the URL to fetch update data from.
    *   Defaults to 'update-test'.
    *
-   * @see update_test_mock_page()
+   * @see Drupal\update_test\Controller\UpdateTestController::updateTest()
    */
   protected function refreshUpdateStatus($xml_map, $url = 'update-test') {
     // Tell the Update Manager module to fetch from the URL provided by
     // update_test module.
-    \Drupal::config('update.settings')->set('fetch.url', _url($url, array('absolute' => TRUE)))->save();
-    // Save the map for update_test_mock_page() to use.
-    \Drupal::config('update_test.settings')->set('xml_map', $xml_map)->save();
+    $this->config('update.settings')->set('fetch.url', Url::fromUri('base:' . $url, array('absolute' => TRUE))->toString())->save();
+    // Save the map for UpdateTestController::updateTest() to use.
+    $this->config('update_test.settings')->set('xml_map', $xml_map)->save();
     // Manually check the update status.
     $this->drupalGet('admin/reports/updates/check');
   }
@@ -55,7 +80,7 @@ abstract class UpdateTestBase extends WebTestBase {
    */
   protected function standardTests() {
     $this->assertRaw('<h3>' . t('Drupal core') . '</h3>');
-    $this->assertRaw(_l(t('Drupal'), 'http://example.com/project/drupal'), 'Link to the Drupal project appears.');
+    $this->assertRaw(\Drupal::l(t('Drupal'), Url::fromUri('http://example.com/project/drupal')), 'Link to the Drupal project appears.');
     $this->assertNoText(t('No available releases found'));
   }
 }

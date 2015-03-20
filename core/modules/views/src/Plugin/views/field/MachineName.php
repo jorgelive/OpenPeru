@@ -46,13 +46,19 @@ class MachineName extends FieldPluginBase {
     }
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function defineOptions() {
     $options = parent::defineOptions();
-    $options['machine_name'] = array('default' => FALSE, 'bool' => TRUE);
+    $options['machine_name'] = array('default' => FALSE);
 
     return $options;
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function buildOptionsForm(&$form, FormStateInterface $form_state) {
     parent::buildOptionsForm($form, $form_state);
 
@@ -64,6 +70,9 @@ class MachineName extends FieldPluginBase {
     );
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function preRender(&$values) {
     $this->getValueOptions();
   }

@@ -6,9 +6,7 @@
 
 namespace Drupal\rdf\Tests\Field;
 
-use Drupal\rdf\Tests\Field\FieldRdfaTestBase;
-use Drupal\Core\Field\FieldDefinitionInterface;
-use Drupal\Core\Language\Language;
+use Drupal\user\Entity\Role;
 
 /**
  * Tests the RDFa output of the entity reference field formatter.
@@ -41,17 +39,23 @@ class EntityReferenceRdfaTest extends FieldRdfaTestBase {
    *
    * @var \Drupal\taxonomy\Entity\Term
    */
-  protected $target_entity;
+  protected $targetEntity;
 
   /**
    * {@inheritdoc}
    */
-  public static $modules = array('entity', 'entity_reference', 'options', 'text', 'filter');
+  public static $modules = array('entity_reference', 'text', 'filter');
 
   protected function setUp() {
     parent::setUp();
 
     $this->installEntitySchema('entity_test_rev');
+
+    // Give anonymous users permission to view test entities.
+    $this->installConfig(array('user'));
+    Role::load(DRUPAL_ANONYMOUS_RID)
+      ->grantPermission('view test entity')
+      ->save();
 
     entity_reference_create_field($this->entityType, $this->bundle, $this->fieldName, 'Field test', $this->entityType);
 
@@ -62,14 +66,13 @@ class EntityReferenceRdfaTest extends FieldRdfaTestBase {
     ))->save();
 
     // Create the entity to be referenced.
-    $this->target_entity = entity_create($this->entityType, array('name' => $this->randomMachineName()));
-    $this->target_entity->save();
+    $this->targetEntity = entity_create($this->entityType, array('name' => $this->randomMachineName()));
+    $this->targetEntity->save();
 
     // Create the entity that will have the entity reference field.
     $this->entity = entity_create($this->entityType, array('name' => $this->randomMachineName()));
     $this->entity->save();
-    $this->entity->{$this->fieldName}->entity = $this->target_entity;
-    $this->entity->{$this->fieldName}->access = TRUE;
+    $this->entity->{$this->fieldName}->entity = $this->targetEntity;
     $this->uri = $this->getAbsoluteUri($this->entity);
   }
 
@@ -77,7 +80,7 @@ class EntityReferenceRdfaTest extends FieldRdfaTestBase {
    * Tests all the entity reference formatters.
    */
   public function testAllFormatters() {
-    $entity_uri = $this->getAbsoluteUri($this->target_entity);
+    $entity_uri = $this->getAbsoluteUri($this->targetEntity);
 
     // Tests the label formatter.
     $this->assertFormatterRdfa(array('type' => 'entity_reference_label'), 'http://schema.org/knows', array('value' => $entity_uri, 'type' => 'uri'));

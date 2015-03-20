@@ -17,6 +17,9 @@ const SIMPLETEST_SCRIPT_COLOR_PASS = 32; // Green.
 const SIMPLETEST_SCRIPT_COLOR_FAIL = 31; // Red.
 const SIMPLETEST_SCRIPT_COLOR_EXCEPTION = 33; // Brown.
 
+// Restricting the chunk of queries prevents memory exhaustion.
+const SIMPLETEST_SCRIPT_SQLITE_VARIABLE_LIMIT = 350;
+
 // Set defaults and get overrides.
 list($args, $count) = simpletest_script_parse_args();
 
@@ -38,6 +41,20 @@ if ($args['execute-test']) {
   exit;
 }
 
+if ($args['list']) {
+  // Display all available tests.
+  echo "\nAvailable test groups & classes\n";
+  echo   "-------------------------------\n\n";
+  $groups = simpletest_test_get_all($args['module']);
+  foreach ($groups as $group => $tests) {
+    echo $group . "\n";
+    foreach ($tests as $class => $info) {
+      echo " - $class\n";
+    }
+  }
+  exit;
+}
+
 simpletest_script_setup_database(TRUE);
 
 if ($args['clean']) {
@@ -53,25 +70,10 @@ if ($args['clean']) {
   exit;
 }
 
-if ($args['list']) {
-  // Display all available tests.
-  echo "\nAvailable test groups & classes\n";
-  echo   "-------------------------------\n\n";
-  $groups = simpletest_test_get_all($args['module']);
-  foreach ($groups as $group => $tests) {
-    echo $group . "\n";
-    foreach ($tests as $class => $info) {
-      echo " - $class\n";
-    }
-  }
-  exit;
-}
-
 $test_list = simpletest_script_get_test_list();
 
 // Try to allocate unlimited time to run the tests.
 drupal_set_time_limit(0);
-
 simpletest_script_reporter_init();
 
 $tests_to_run = array();
@@ -157,6 +159,8 @@ All arguments are long options.
               (e.g., 'node')
 
   --class     Run tests identified by specific class names, instead of group names.
+              A specific test method can be added, for example,
+              'Drupal\book\Tests\BookTest::testBookExport'.
 
   --file      Run tests identified by specific file names, instead of group names.
               Specify the path and the extension
@@ -518,13 +522,6 @@ function simpletest_script_execute_batch($test_classes) {
       $test_ids[] = $test_id;
 
       $test_class = array_shift($test_classes);
-      // Process phpunit tests immediately since they are fast and we don't need
-      // to fork for them.
-      if (is_subclass_of($test_class, 'Drupal\Tests\UnitTestCase')) {
-        simpletest_script_run_phpunit($test_id, $test_class);
-        continue;
-      }
-
       // Fork a child process.
       $command = simpletest_script_command($test_id, $test_class);
       $process = proc_open($command, array(), $pipes, NULL, NULL, array('bypass_shell' => TRUE));
@@ -623,12 +620,25 @@ function simpletest_script_run_one_test($test_id, $test_class) {
   global $args;
 
   try {
-    $test = new $test_class($test_id);
-    $test->dieOnFail = (bool) $args['die-on-fail'];
-    $test->verbose = (bool) $args['verbose'];
-    $test->run();
-
-    simpletest_script_reporter_display_summary($test_class, $test->results);
+    if (strpos($test_class, '::') > 0) {
+      list($class_name, $method) = explode('::', $test_class, 2);
+      $methods = [$method];
+    }
+    else {
+      $class_name = $test_class;
+      // Use empty array to run all the test methods.
+      $methods = array();
+    }
+    $test = new $class_name($test_id);
+    if (is_subclass_of($test_class, '\PHPUnit_Framework_TestCase')) {
+      simpletest_script_run_phpunit($test_id, $test_class);
+    }
+    else {
+      $test->dieOnFail = (bool) $args['die-on-fail'];
+      $test->verbose = (bool) $args['verbose'];
+      $test->run($methods);
+      simpletest_script_reporter_display_summary($test_class, $test->results);
+    }
 
     // Finished, kill this runner.
     exit(0);
@@ -694,6 +704,10 @@ function simpletest_script_command($test_id, $test_class) {
  * @see simpletest_script_run_one_test()
  */
 function simpletest_script_cleanup($test_id, $test_class, $exitcode) {
+  if (strpos($test_class, 'Drupal\\Tests\\') === 0) {
+    // PHPUnit test, move on.
+    return;
+  }
   // Retrieve the last database prefix used for testing.
   list($db_prefix, ) = simpletest_last_test_get($test_id);
 
@@ -772,7 +786,8 @@ function simpletest_script_get_test_list() {
     if ($args['class']) {
       $test_list = array();
       foreach ($args['test_names'] as $test_class) {
-        if (class_exists($test_class)) {
+        list($class_name, ) = explode('::', $test_class, 2);
+        if (class_exists($class_name)) {
           $test_list[] = $test_class;
         }
         else {
@@ -781,8 +796,8 @@ function simpletest_script_get_test_list() {
           foreach ($groups as $group) {
             $all_classes = array_merge($all_classes, array_keys($group));
           }
-          simpletest_script_print_error('Test class not found: ' . $test_class);
-          simpletest_script_print_alternatives($test_class, $all_classes, 6);
+          simpletest_script_print_error('Test class not found: ' . $class_name);
+          simpletest_script_print_alternatives($class_name, $all_classes, 6);
           exit(1);
         }
       }
@@ -809,7 +824,7 @@ function simpletest_script_get_test_list() {
         else {
           foreach ($matches[1] as $class_name) {
             $namespace_class = $namespace . '\\' . $class_name;
-            if (is_subclass_of($namespace_class, '\Drupal\simpletest\TestBase') || is_subclass_of($namespace_class, '\Drupal\Tests\UnitTestCase')) {
+            if (is_subclass_of($namespace_class, '\Drupal\simpletest\TestBase') || is_subclass_of($namespace_class, '\PHPUnit_Framework_TestCase')) {
               $test_list[] = $namespace_class;
             }
           }
@@ -907,10 +922,7 @@ function simpletest_script_reporter_display_summary($class, $results) {
 function simpletest_script_reporter_write_xml_results() {
   global $args, $test_ids, $results_map;
 
-  $results = Database::getConnection('default', 'test-runner')
-    ->query("SELECT * FROM {simpletest} WHERE test_id IN (:test_ids) ORDER BY test_class, message_id", array(
-      ':test_ids' => $test_ids,
-    ));
+  $results = simpletest_script_load_messages_by_test_id($test_ids);
 
   $test_class = '';
   $xml_files = array();
@@ -995,10 +1007,7 @@ function simpletest_script_reporter_display_results() {
     echo "Detailed test results\n";
     echo "---------------------\n";
 
-    $results = Database::getConnection('default', 'test-runner')
-      ->query("SELECT * FROM {simpletest} WHERE test_id IN (:test_ids) ORDER BY test_class, message_id", array(
-        ':test_ids' => $test_ids,
-      ));
+    $results = simpletest_script_load_messages_by_test_id($test_ids);
     $test_class = '';
     foreach ($results as $result) {
       if (isset($results_map[$result->status])) {
@@ -1115,4 +1124,41 @@ function simpletest_script_print_alternatives($string, $array, $degree = 4) {
       simpletest_script_print("  - $alternative\n", SIMPLETEST_SCRIPT_COLOR_FAIL);
     }
   }
+}
+
+/**
+ * Loads the simpletest messages from the database.
+ *
+ * Messages are ordered by test class and message id.
+ *
+ * @param array $test_ids
+ *   Array of test IDs of the messages to be loaded.
+ *
+ * @return array
+ *   Array of simpletest messages from the database.
+ */
+function simpletest_script_load_messages_by_test_id($test_ids) {
+  global $args;
+  $results = array();
+
+  // Sqlite has a maximum number of variables per query. If required, the
+  // database query is split into chunks.
+  if (count($test_ids) > SIMPLETEST_SCRIPT_SQLITE_VARIABLE_LIMIT && !empty($args['sqlite'])) {
+    $test_id_chunks = array_chunk($test_ids, SIMPLETEST_SCRIPT_SQLITE_VARIABLE_LIMIT);
+  }
+  else {
+    $test_id_chunks = array($test_ids);
+  }
+
+  foreach ($test_id_chunks as $test_id_chunk) {
+    $result_chunk = Database::getConnection('default', 'test-runner')
+      ->query("SELECT * FROM {simpletest} WHERE test_id IN ( :test_ids[] ) ORDER BY test_class, message_id", array(
+        ':test_ids[]' => $test_id_chunk,
+      ))->fetchAll();
+    if ($result_chunk) {
+      $results = array_merge($results, $result_chunk);
+    }
+  }
+
+  return $results;
 }

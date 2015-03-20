@@ -21,7 +21,7 @@ class LinkEdit extends Link {
 
   protected function defineOptions() {
     $options = parent::defineOptions();
-    $options['destination'] = array('default' => FALSE, 'bool' => TRUE);
+    $options['destination'] = array('default' => FALSE);
 
     return $options;
   }
@@ -63,7 +63,7 @@ class LinkEdit extends Link {
       $this->options['alter']['query'] = drupal_get_destination();
     }
 
-    $this->options['alter']['path'] = "comment/" . $comment->id() . "/edit";
+    $this->options['alter']['url'] = $comment->urlInfo('edit-form');
 
     return $text;
   }

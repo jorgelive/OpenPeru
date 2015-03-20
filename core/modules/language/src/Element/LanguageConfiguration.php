@@ -10,12 +10,12 @@ namespace Drupal\language\Element;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Render\Element\FormElement;
+use Drupal\language\Entity\ContentLanguageSettings;
 
 /**
  * Provides language element configuration.
  *
- * @todo Annotate once https://www.drupal.org/node/2326409 is in.
- *   FormElement("language_configuration")
+ * @FormElement("language_configuration")
  */
 class LanguageConfiguration extends FormElement {
 
@@ -41,24 +41,26 @@ class LanguageConfiguration extends FormElement {
     // Avoid validation failure since we are moving the '#options' key in the
     // nested 'language' select element.
     unset($element['#options']);
+    /** @var ContentLanguageSettings $default_config */
+    $default_config = $element['#default_value'];
     $element['langcode'] = array(
       '#type' => 'select',
       '#title' => t('Default language'),
       '#options' => $options + static::getDefaultOptions(),
-      '#description' => t('Explanation of the language options is found on the <a href="@languages_list_page">languages list page</a>.', array('@languages_list_page' => \Drupal::url('language.admin_overview'))),
-      '#default_value' => isset($element['#default_value']['langcode']) ? $element['#default_value']['langcode'] : NULL,
+      '#description' => t('Explanation of the language options is found on the <a href="@languages_list_page">languages list page</a>.', array('@languages_list_page' => \Drupal::url('entity.configurable_language.collection'))),
+      '#default_value' => ($default_config != NULL) ? $default_config->getDefaultLangcode() : LanguageInterface::LANGCODE_SITE_DEFAULT,
     );
 
-    $element['language_show'] = array(
+    $element['language_alterable'] = array(
       '#type' => 'checkbox',
       '#title' => t('Show language selector on create and edit pages'),
-      '#default_value' => isset($element['#default_value']['language_show']) ? $element['#default_value']['language_show'] : NULL,
+      '#default_value' => ($default_config != NULL) ? $default_config->isLanguageAlterable() : FALSE,
     );
 
     // Add the entity type and bundle information to the form if they are set.
     // They will be used, in the submit handler, to generate the names of the
-    // variables that will store the settings and are a way to uniquely identify
-    // the entity.
+    // configuration entities that will store the settings and are a way to uniquely
+    // identify the entity.
     $language = $form_state->get('language') ?: [];
     $language += array(
       $element['#name'] => array(
@@ -75,8 +77,9 @@ class LanguageConfiguration extends FormElement {
       // handler.
       // @todo Form API: Allow form widgets/sections to declare #submit
       //   handlers.
-      if (isset($form['actions']['submit']['#submit']) && array_search('language_configuration_element_submit', $form['actions']['submit']['#submit']) === FALSE) {
-        $form['actions']['submit']['#submit'][] = 'language_configuration_element_submit';
+      $submit_name = isset($form['actions']['save_continue']) ? 'save_continue' : 'submit';
+      if (isset($form['actions'][$submit_name]['#submit']) && array_search('language_configuration_element_submit', $form['actions'][$submit_name]['#submit']) === FALSE) {
+        $form['actions'][$submit_name]['#submit'][] = 'language_configuration_element_submit';
       }
       elseif (array_search('language_configuration_element_submit', $form['#submit']) === FALSE) {
         $form['#submit'][] = 'language_configuration_element_submit';
@@ -93,14 +96,14 @@ class LanguageConfiguration extends FormElement {
    */
   protected static function getDefaultOptions() {
     $language_options = array(
-      'site_default' => t("Site's default language (!language)", array('!language' => static::languageManager()->getDefaultLanguage()->name)),
+      LanguageInterface::LANGCODE_SITE_DEFAULT => t("Site's default language (!language)", array('!language' => static::languageManager()->getDefaultLanguage()->getName())),
       'current_interface' => t('Current interface language'),
       'authors_default' => t("Author's preferred language"),
     );
 
     $languages = static::languageManager()->getLanguages(LanguageInterface::STATE_ALL);
     foreach ($languages as $langcode => $language) {
-      $language_options[$langcode] = $language->isLocked() ? t('- @name -', array('@name' => $language->name)) : $language->name;
+      $language_options[$langcode] = $language->isLocked() ? t('- @name -', array('@name' => $language->getName())) : $language->getName();
     }
 
     return $language_options;

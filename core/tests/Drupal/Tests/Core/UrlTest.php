@@ -7,14 +7,18 @@
 
 namespace Drupal\Tests\Core;
 
+use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Access\AccessManagerInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Routing\RouteMatch;
 use Drupal\Core\Url;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Cmf\Component\Routing\RouteObjectInterface;
 use Symfony\Component\HttpFoundation\ParameterBag;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Exception\InvalidParameterException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
+use Symfony\Component\Routing\Route;
 
 /**
  * @coversDefaultClass \Drupal\Core\Url
@@ -35,6 +39,13 @@ class UrlTest extends UnitTestCase {
   protected $urlGenerator;
 
   /**
+   * The path alias manager.
+   *
+   * @var \Drupal\Core\Path\AliasManagerInterface|\PHPUnit_Framework_MockObject_MockObject
+   */
+  protected $pathAliasManager;
+
+  /**
    * The router.
    *
    * @var \Drupal\Tests\Core\Routing\TestRouterInterface|\PHPUnit_Framework_MockObject_MockObject
@@ -49,6 +60,13 @@ class UrlTest extends UnitTestCase {
   protected $map;
 
   /**
+   * The mocked path validator.
+   *
+   * @var \Drupal\Core\Path\PathValidatorInterface|\PHPUnit_Framework_MockObject_MockObject
+   */
+  protected $pathValidator;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp() {
@@ -60,15 +78,34 @@ class UrlTest extends UnitTestCase {
     $map[] = array('node_edit', array('node' => '2'), array(), '/node/2/edit');
     $this->map = $map;
 
+    $alias_map = array(
+      // Set up one proper alias that can be resolved to a system path.
+      array('node-alias-test', NULL, 'node'),
+      // Passing in anything else should return the same string.
+      array('node', NULL, 'node'),
+      array('node/1', NULL, 'node/1'),
+      array('node/2/edit', NULL, 'node/2/edit'),
+      array('non-existent', NULL, 'non-existent'),
+    );
+
     $this->urlGenerator = $this->getMock('Drupal\Core\Routing\UrlGeneratorInterface');
     $this->urlGenerator->expects($this->any())
       ->method('generateFromRoute')
       ->will($this->returnValueMap($this->map));
 
+    $this->pathAliasManager = $this->getMock('Drupal\Core\Path\AliasManagerInterface');
+    $this->pathAliasManager->expects($this->any())
+      ->method('getPathByAlias')
+      ->will($this->returnValueMap($alias_map));
+
     $this->router = $this->getMock('Drupal\Tests\Core\Routing\TestRouterInterface');
+    $this->pathValidator = $this->getMock('Drupal\Core\Path\PathValidatorInterface');
+
     $this->container = new ContainerBuilder();
     $this->container->set('router.no_access_checks', $this->router);
     $this->container->set('url_generator', $this->urlGenerator);
+    $this->container->set('path.alias_manager', $this->pathAliasManager);
+    $this->container->set('path.validator', $this->pathValidator);
     \Drupal::setContainer($this->container);
   }
 
@@ -102,7 +139,8 @@ class UrlTest extends UnitTestCase {
     foreach ($this->map as $index => $values) {
       $path = array_pop($values);
       $url = Url::createFromRequest(Request::create("$path"));
-      $this->assertSame($values, array_values($url->toArray()));
+      $expected = Url::fromRoute($values[0], $values[1], $values[2]);
+      $this->assertEquals($expected, $url);
       $urls[$index] = $url;
     }
     return $urls;
@@ -131,6 +169,79 @@ class UrlTest extends UnitTestCase {
   public function testFromRouteFront() {
     $url = Url::fromRoute('<front>');
     $this->assertSame('<front>', $url->getRouteName());
+  }
+
+  /**
+   * Tests the fromUserInput method with valid paths.
+   *
+   * @covers ::fromUserInput
+   * @dataProvider providerFromValidInternalUri
+   */
+  public function testFromUserInput($path) {
+    $url = Url::fromUserInput($path);
+    $uri = $url->getUri();
+
+    $this->assertInstanceOf('Drupal\Core\Url', $url);
+    $this->assertFalse($url->isRouted());
+    $this->assertEquals(0, strpos($uri, 'base:'));
+
+    $parts = UrlHelper::parse($path);
+    $options = $url->getOptions();
+
+    if (!empty($parts['fragment'])) {
+      $this->assertSame($parts['fragment'], $options['fragment']);
+    }
+    else {
+      $this->assertArrayNotHasKey('fragment', $options);
+    }
+
+    if (!empty($parts['query'])) {
+      $this->assertEquals($parts['query'], $options['query']);
+    }
+    else {
+      $this->assertArrayNotHasKey('query', $options);
+    }
+  }
+
+  /**
+   * Tests the fromUserInput method with invalid paths.
+   *
+   * @covers ::fromUserInput
+   * @expectedException \InvalidArgumentException
+   * @dataProvider providerFromInvalidInternalUri
+   */
+  public function testFromInvalidUserInput($path) {
+    $url = Url::fromUserInput($path);
+  }
+
+  /**
+   * Tests fromUri() method with a user-entered path not matching any route.
+   *
+   * @covers ::fromUri
+   */
+  public function testFromRoutedPathWithInvalidRoute() {
+    $this->pathValidator->expects($this->once())
+      ->method('getUrlIfValidWithoutAccessCheck')
+      ->with('invalid-path')
+      ->willReturn(FALSE);
+    $url = Url::fromUri('internal:/invalid-path');
+    $this->assertSame(FALSE, $url->isRouted());
+    $this->assertSame('base:invalid-path', $url->getUri());
+  }
+
+  /**
+   * Tests fromUri() method with user-entered path matching a valid route.
+   *
+   * @covers ::fromUri
+   */
+  public function testFromRoutedPathWithValidRoute() {
+    $url = Url::fromRoute('test_route');
+    $this->pathValidator->expects($this->once())
+      ->method('getUrlIfValidWithoutAccessCheck')
+      ->with('valid-path')
+      ->willReturn($url);
+    $result_url = Url::fromUri('internal:/valid-path');
+    $this->assertSame($url, $result_url);
   }
 
   /**
@@ -217,6 +328,37 @@ class UrlTest extends UnitTestCase {
   }
 
   /**
+   * Tests the getInternalPath method().
+   *
+   * @param \Drupal\Core\Url[] $urls
+   *   Array of URL objects.
+   *
+   * @covers ::getInternalPath
+   *
+   * @depends testUrlFromRequest
+   */
+  public function testGetInternalPath($urls) {
+    $map = [];
+    $map[] = ['view.frontpage.page_1', [], '/node'];
+    $map[] = ['node_view', ['node' => '1'], '/node/1'];
+    $map[] = ['node_edit', ['node' => '2'], '/node/2/edit'];
+
+    foreach ($urls as $index => $url) {
+      // Clone the url so that there is no leak of internal state into the
+      // other ones.
+      $url = clone $url;
+      $url_generator = $this->getMock('Drupal\Core\Routing\UrlGeneratorInterface');
+      $url_generator->expects($this->once())
+        ->method('getPathFromRoute')
+        ->will($this->returnValueMap($map, $index));
+      $url->setUrlGenerator($url_generator);
+
+      $url->getInternalPath();
+      $url->getInternalPath();
+    }
+  }
+
+  /**
    * Tests the toString() method.
    *
    * @param \Drupal\Core\Url[] $urls
@@ -234,23 +376,20 @@ class UrlTest extends UnitTestCase {
   }
 
   /**
-   * Tests the toArray() method.
+   * Tests the __toString() method.
    *
    * @param \Drupal\Core\Url[] $urls
    *   An array of Url objects.
    *
    * @depends testUrlFromRequest
    *
-   * @covers ::toArray
+   * @covers ::__toString
    */
-  public function testToArray($urls) {
+  public function testMagicToString($urls) {
     foreach ($urls as $index => $url) {
-      $expected = array(
-        'route_name' => $this->map[$index][0],
-        'route_parameters' => $this->map[$index][1],
-        'options' => $this->map[$index][2],
-      );
-      $this->assertSame($expected, $url->toArray());
+      $url->setUrlGenerator(\Drupal::urlGenerator());
+      $path = array_pop($this->map[$index]);
+      $this->assertSame($path, (string) $url);
     }
   }
 
@@ -325,7 +464,7 @@ class UrlTest extends UnitTestCase {
   }
 
   /**
-   * Tests the access() method.
+   * Tests the access() method for routed URLs.
    *
    * @param bool $access
    *
@@ -333,11 +472,26 @@ class UrlTest extends UnitTestCase {
    * @covers ::accessManager
    * @dataProvider accessProvider
    */
-  public function testAccess($access) {
+  public function testAccessRouted($access) {
     $account = $this->getMock('Drupal\Core\Session\AccountInterface');
     $url = new TestUrl('entity.node.canonical', ['node' => 3]);
     $url->setAccessManager($this->getMockAccessManager($access, $account));
     $this->assertEquals($access, $url->access($account));
+  }
+
+  /**
+   * Tests the access() method for unrouted URLs (they always have access).
+   *
+   * @covers ::access
+   */
+  public function testAccessUnrouted() {
+    $account = $this->getMock('Drupal\Core\Session\AccountInterface');
+    $url = TestUrl::fromUri('base:kittens');
+    $access_manager = $this->getMock('Drupal\Core\Access\AccessManagerInterface');
+    $access_manager->expects($this->never())
+      ->method('checkNamedRoute');
+    $url->setAccessManager($access_manager);
+    $this->assertTrue($url->access($account));
   }
 
   /**
@@ -350,13 +504,290 @@ class UrlTest extends UnitTestCase {
    */
   public function testRenderAccess($access) {
     $element = array(
-      '#route_name' => 'entity.node.canonical',
-      '#route_parameters' => ['node' => 3],
-      '#options' => [],
+      '#url' => Url::fromRoute('entity.node.canonical', ['node' => 3]),
     );
     $this->container->set('current_user', $this->getMock('Drupal\Core\Session\AccountInterface'));
     $this->container->set('access_manager', $this->getMockAccessManager($access));
     $this->assertEquals($access, TestUrl::renderAccess($element));
+  }
+
+  /**
+   * Tests the fromRouteMatch() method.
+   */
+  public function testFromRouteMatch() {
+    $route = new Route('/test-route/{foo}');
+    $route_match = new RouteMatch('test_route', $route, ['foo' => (object) [1]], ['foo' => 1]);
+    $url = Url::fromRouteMatch($route_match);
+    $this->assertSame('test_route', $url->getRouteName());
+    $this->assertEquals(['foo' => '1'] , $url->getRouteParameters());
+  }
+
+  /**
+   * Data provider for testing entity URIs
+   */
+  public function providerTestEntityUris() {
+    return [
+      [
+        'entity:test_entity/1',
+        [],
+        'entity.test_entity.canonical',
+        ['test_entity' => '1'],
+        NULL,
+        NULL,
+      ],
+      [
+        // Ensure a fragment of #0 is handled correctly.
+        'entity:test_entity/1#0',
+        [],
+        'entity.test_entity.canonical',
+        ['test_entity' => '1'],
+        NULL,
+        '0',
+      ],
+      // Ensure an empty fragment of # is in options discarded as expected.
+      [
+        'entity:test_entity/1',
+        ['fragment' => ''],
+        'entity.test_entity.canonical',
+        ['test_entity' => '1'],
+        NULL,
+        NULL,
+      ],
+      // Ensure an empty fragment of # in the URI is discarded as expected.
+      [
+        'entity:test_entity/1#',
+        [],
+        'entity.test_entity.canonical',
+        ['test_entity' => '1'],
+        NULL,
+        NULL,
+      ],
+      [
+        'entity:test_entity/2?page=1&foo=bar#bottom',
+        [], 'entity.test_entity.canonical',
+        ['test_entity' => '2'],
+        ['page' => '1', 'foo' => 'bar'],
+        'bottom',
+      ],
+      [
+        'entity:test_entity/2?page=1&foo=bar#bottom',
+        ['fragment' => 'top', 'query' => ['foo' => 'yes', 'focus' => 'no']],
+        'entity.test_entity.canonical',
+        ['test_entity' => '2'],
+        ['page' => '1', 'foo' => 'yes', 'focus' => 'no'],
+        'top',
+      ],
+
+    ];
+  }
+
+  /**
+   * Tests the fromUri() method with an entity: URI.
+   *
+   * @covers ::fromUri
+   *
+   * @dataProvider providerTestEntityUris
+   */
+  public function testEntityUris($uri, $options, $route_name, $route_parameters, $query, $fragment) {
+    $url = Url::fromUri($uri, $options);
+    $this->assertSame($route_name, $url->getRouteName());
+    $this->assertEquals($route_parameters, $url->getRouteParameters());
+    $this->assertEquals($url->getOption('query'), $query);
+    $this->assertSame($url->getOption('fragment'), $fragment);
+  }
+
+  /**
+   * Tests the fromUri() method with an invalid entity: URI.
+   *
+   * @covers ::fromUri
+   * @expectedException \Symfony\Component\Routing\Exception\InvalidParameterException
+   */
+  public function testInvalidEntityUriParameter() {
+    // Make the mocked URL generator behave like the actual one.
+    $this->urlGenerator->expects($this->once())
+      ->method('generateFromRoute')
+      ->with('entity.test_entity.canonical', ['test_entity' => '1/blah'])
+      ->willThrowException(new InvalidParameterException('Parameter "test_entity" for route "/test_entity/{test_entity}" must match "[^/]++" ("1/blah" given) to generate a corresponding URL..'));
+
+    Url::fromUri('entity:test_entity/1/blah')->toString();
+  }
+
+  /**
+   * Tests the toUriString() method with entity: URIs.
+   *
+   * @covers ::toUriString
+   *
+   * @dataProvider providerTestToUriStringForEntity
+   */
+  public function testToUriStringForEntity($uri, $options, $uri_string) {
+    $url = Url::fromUri($uri, $options);
+    $this->assertSame($url->toUriString(), $uri_string);
+  }
+
+  /**
+   * Data provider for testing string entity URIs
+   */
+  public function providerTestToUriStringForEntity() {
+    return [
+      ['entity:test_entity/1', [], 'route:entity.test_entity.canonical;test_entity=1'],
+      ['entity:test_entity/1', ['fragment' => 'top', 'query' => ['page' => '2']], 'route:entity.test_entity.canonical;test_entity=1?page=2#top'],
+      ['entity:test_entity/1?page=2#top', [], 'route:entity.test_entity.canonical;test_entity=1?page=2#top'],
+    ];
+  }
+
+  /**
+   * Tests the toUriString() method with internal: URIs.
+   *
+   * @covers ::toUriString
+   *
+   * @dataProvider providerTestToUriStringForInternal
+   */
+  public function testToUriStringForInternal($uri, $options, $uri_string) {
+    $url = Url::fromRoute('entity.test_entity.canonical', ['test_entity' => '1']);
+    $this->pathValidator->expects($this->any())
+      ->method('getUrlIfValidWithoutAccessCheck')
+      ->willReturnMap([
+        ['test-entity/1', $url],
+        ['<front>', Url::fromRoute('<front>')],
+        ['<none>', Url::fromRoute('<none>')],
+      ]);
+    $url = Url::fromUri($uri, $options);
+    $this->assertSame($url->toUriString(), $uri_string);
+  }
+
+  /**
+   * Data provider for testing internal URIs.
+   */
+  public function providerTestToUriStringForInternal() {
+    return [
+      // The four permutations of a regular path.
+      ['internal:/test-entity/1', [], 'route:entity.test_entity.canonical;test_entity=1'],
+      ['internal:/test-entity/1', ['fragment' => 'top'], 'route:entity.test_entity.canonical;test_entity=1#top'],
+      ['internal:/test-entity/1', ['fragment' => 'top', 'query' => ['page' => '2']], 'route:entity.test_entity.canonical;test_entity=1?page=2#top'],
+      ['internal:/test-entity/1?page=2#top', [], 'route:entity.test_entity.canonical;test_entity=1?page=2#top'],
+
+      // The four permutations of the special '<front>' path.
+      ['internal:/', [], 'route:<front>'],
+      ['internal:/', ['fragment' => 'top'], 'route:<front>#top'],
+      ['internal:/', ['fragment' => 'top', 'query' => ['page' => '2']], 'route:<front>?page=2#top'],
+      ['internal:/?page=2#top', [], 'route:<front>?page=2#top'],
+
+      // The four permutations of the special '<none>' path.
+      ['internal:', [], 'route:<none>'],
+      ['internal:', ['fragment' => 'top'], 'route:<none>#top'],
+      ['internal:', ['fragment' => 'top', 'query' => ['page' => '2']], 'route:<none>?page=2#top'],
+      ['internal:?page=2#top', [], 'route:<none>?page=2#top'],
+    ];
+  }
+
+  /**
+   * Tests the fromUri() method with a valid internal: URI.
+   *
+   * @covers ::fromUri
+   * @dataProvider providerFromValidInternalUri
+   */
+  public function testFromValidInternalUri($path) {
+    $url = Url::fromUri('internal:' . $path);
+    $this->assertInstanceOf('Drupal\Core\Url', $url);
+  }
+
+  /**
+   * Data provider for testFromValidInternalUri().
+   */
+  public function providerFromValidInternalUri() {
+    return [
+      // Normal paths with a leading slash.
+      ['/kittens'],
+      ['/kittens/bengal'],
+      // Fragments with and without leading slashes.
+      ['/#about-our-kittens'],
+      ['/kittens#feeding'],
+      ['#feeding'],
+      // Query strings with and without leading slashes.
+      ['/kittens?page=1000'],
+      ['/?page=1000'],
+      ['?page=1000'],
+      ['?breed=bengal&page=1000'],
+      // Paths with various token formats but no leading slash.
+      ['/[duckies]'],
+      ['/%bunnies'],
+      ['/{{ puppies }}'],
+      // Disallowed characters in the authority (host name) that are valid
+      // elsewhere in the path.
+      ['/(:;2&+h^'],
+      ['/AKI@&hO@'],
+    ];
+  }
+
+  /**
+   * Tests the fromUri() method with an invalid internal: URI.
+   *
+   * @covers ::fromUri
+   * @expectedException \InvalidArgumentException
+   * @dataProvider providerFromInvalidInternalUri
+   */
+  public function testFromInvalidInternalUri($path) {
+    Url::fromUri('internal:' . $path);
+  }
+
+  /**
+   * Data provider for testFromInvalidInternalUri().
+   */
+  public function providerFromInvalidInternalUri() {
+    return [
+      // Normal paths without a leading slash.
+      ['kittens'],
+      ['kittens/bengal'],
+      // Path without a leading slash containing a fragment.
+      ['kittens#feeding'],
+      // Path without a leading slash containing a query string.
+      ['kittens?page=1000'],
+      // Paths with various token formats but no leading slash.
+      ['[duckies]'],
+      ['%bunnies'],
+      ['{{ puppies }}'],
+      // Disallowed characters in the authority (host name) that are valid
+      // elsewhere in the path.
+      ['(:;2&+h^'],
+      ['AKI@&hO@'],
+    ];
+  }
+
+  /**
+   * Tests the toUriString() method with route: URIs.
+   *
+   * @covers ::toUriString
+   *
+   * @dataProvider providerTestToUriStringForRoute
+   */
+  public function testToUriStringForRoute($uri, $options, $uri_string) {
+    $url = Url::fromUri($uri, $options);
+    $this->assertSame($url->toUriString(), $uri_string);
+  }
+
+  /**
+   * Data provider for testing route: URIs.
+   */
+  public function providerTestToUriStringForRoute() {
+    return [
+      ['route:entity.test_entity.canonical;test_entity=1', [], 'route:entity.test_entity.canonical;test_entity=1'],
+      ['route:entity.test_entity.canonical;test_entity=1', ['fragment' => 'top', 'query' => ['page' => '2']], 'route:entity.test_entity.canonical;test_entity=1?page=2#top'],
+      ['route:entity.test_entity.canonical;test_entity=1?page=2#top', [], 'route:entity.test_entity.canonical;test_entity=1?page=2#top'],
+      // Check that an empty fragment is discarded.
+      ['route:entity.test_entity.canonical;test_entity=1?page=2#', [], 'route:entity.test_entity.canonical;test_entity=1?page=2'],
+      // Check that an empty fragment is discarded.
+      ['route:entity.test_entity.canonical;test_entity=1?page=2', ['fragment' => ''], 'route:entity.test_entity.canonical;test_entity=1?page=2'],
+      // Check that a fragment of #0 is preserved.
+      ['route:entity.test_entity.canonical;test_entity=1?page=2#0', [], 'route:entity.test_entity.canonical;test_entity=1?page=2#0'],
+    ];
+  }
+
+  /**
+   * @expectedException \InvalidArgumentException
+   * @expectedExceptionMessage The route URI "route:" is invalid.
+   */
+  public function testFromRouteUriWithMissingRouteName() {
+    Url::fromUri('route:');
   }
 
   /**

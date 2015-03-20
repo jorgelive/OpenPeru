@@ -8,8 +8,10 @@
 namespace Drupal\contextual\Plugin\views\field;
 
 use Drupal\Component\Serialization\Json;
+use Drupal\Component\Utility\String;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
 use Drupal\views\Plugin\views\field\FieldPluginBase;
 use Drupal\views\ResultRow;
 
@@ -29,6 +31,9 @@ class ContextualLinks extends FieldPluginBase {
     return FALSE;
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function defineOptions() {
     $options = parent::defineOptions();
 
@@ -38,6 +43,9 @@ class ContextualLinks extends FieldPluginBase {
     return $options;
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function buildOptionsForm(&$form, FormStateInterface $form_state) {
     $all_fields = $this->view->display_handler->getFieldLabels();
     // Offer to include only those fields that follow this one.
@@ -61,6 +69,9 @@ class ContextualLinks extends FieldPluginBase {
     );
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function preRender(&$values) {
     // Add a row plugin css class for the contextual link.
     $class = 'contextual-region';
@@ -95,10 +106,13 @@ class ContextualLinks extends FieldPluginBase {
       if (!empty($this->view->field[$field]->options['alter']['path'])) {
         $path = $this->view->field[$field]->options['alter']['path'];
       }
+      elseif (!empty($this->view->field[$field]->options['alter']['url']) && $this->view->field[$field]->options['alter']['url'] instanceof Url) {
+        $path = $this->view->field[$field]->options['alter']['url']->toString();
+      }
       if (!empty($title) && !empty($path)) {
         // Make sure that tokens are replaced for this paths as well.
         $tokens = $this->getRenderTokens(array());
-        $path = strip_tags(decode_entities(strtr($path, $tokens)));
+        $path = strip_tags(String::decodeEntities(strtr($path, $tokens)));
 
         $links[$field] = array(
           'href' => $path,
@@ -133,6 +147,9 @@ class ContextualLinks extends FieldPluginBase {
     }
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function query() { }
 
 }

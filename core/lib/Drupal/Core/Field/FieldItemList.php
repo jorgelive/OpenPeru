@@ -7,10 +7,10 @@
 
 namespace Drupal\Core\Field;
 
+use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Language\LanguageInterface;
-use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\TypedData\DataDefinitionInterface;
 use Drupal\Core\TypedData\Plugin\DataType\ItemList;
@@ -27,10 +27,9 @@ use Drupal\Core\TypedData\TypedDataInterface;
 class FieldItemList extends ItemList implements FieldItemListInterface {
 
   /**
-   * Numerically indexed array of field items, implementing the
-   * FieldItemInterface.
+   * Numerically indexed array of field items.
    *
-   * @var array
+   * @var \Drupal\Core\Field\FieldItemInterface[]
    */
   protected $list = array();
 
@@ -40,18 +39,6 @@ class FieldItemList extends ItemList implements FieldItemListInterface {
    * @var string
    */
   protected $langcode = LanguageInterface::LANGCODE_NOT_SPECIFIED;
-
-  /**
-   * {@inheritdoc}
-   */
-  public function __construct(DataDefinitionInterface $definition, $name = NULL, TypedDataInterface $parent = NULL) {
-    parent::__construct($definition, $name, $parent);
-    // Always initialize one empty item as most times a value for at least one
-    // item will be present. That way prototypes created by
-    // \Drupal\Core\TypedData\TypedDataManager::getPropertyInstance() will
-    // already have this field item ready for use after cloning.
-    $this->list[0] = $this->createItem(0);
-  }
 
   /**
    * {@inheritdoc}
@@ -101,11 +88,9 @@ class FieldItemList extends ItemList implements FieldItemListInterface {
    * {@inheritdoc}
    */
   public function filterEmptyItems() {
-    if (isset($this->list)) {
-      $this->list = array_values(array_filter($this->list, function($item) {
-        return !$item->isEmpty();
-      }));
-    }
+    $this->filter(function ($item) {
+      return !$item->isEmpty();
+    });
   }
 
   /**
@@ -113,78 +98,62 @@ class FieldItemList extends ItemList implements FieldItemListInterface {
    * @todo Revisit the need when all entity types are converted to NG entities.
    */
   public function getValue($include_computed = FALSE) {
-    if (isset($this->list)) {
-      $values = array();
-      foreach ($this->list as $delta => $item) {
-        $values[$delta] = $item->getValue($include_computed);
-      }
-      return $values;
+    $values = array();
+    foreach ($this->list as $delta => $item) {
+      $values[$delta] = $item->getValue($include_computed);
     }
+    return $values;
   }
 
   /**
    * {@inheritdoc}
    */
   public function setValue($values, $notify = TRUE) {
-    if (!isset($values) || $values === array()) {
-      $this->list = $values;
+    // Support passing in only the value of the first item, either as a litteral
+    // (value of the first property) or as an array of properties.
+    if (isset($values) && (!is_array($values) || (!empty($values) && !is_numeric(current(array_keys($values)))))) {
+      $values = array(0 => $values);
     }
-    else {
-      // Support passing in only the value of the first item.
-      if (!is_array($values) || !is_numeric(current(array_keys($values)))) {
-        $values = array(0 => $values);
-      }
-
-      // Clear the values of properties for which no value has been passed.
-      if (isset($this->list)) {
-        $this->list = array_intersect_key($this->list, $values);
-      }
-
-      // Set the values.
-      foreach ($values as $delta => $value) {
-        if (!is_numeric($delta)) {
-          throw new \InvalidArgumentException('Unable to set a value with a non-numeric delta in a list.');
-        }
-        elseif (!isset($this->list[$delta])) {
-          $this->list[$delta] = $this->createItem($delta, $value);
-        }
-        else {
-          $this->list[$delta]->setValue($value, FALSE);
-        }
-      }
-    }
-    // Notify the parent of any changes.
-    if ($notify && isset($this->parent)) {
-      $this->parent->onChange($this->name);
-    }
+    parent::setValue($values, $notify);
   }
 
   /**
    * {@inheritdoc}
    */
   public function __get($property_name) {
-    return $this->first()->__get($property_name);
+    // For empty fields, $entity->field->property is NULL.
+    if ($item = $this->first()) {
+      return $item->__get($property_name);
+    }
   }
 
   /**
    * {@inheritdoc}
    */
   public function __set($property_name, $value) {
-    $this->first()->__set($property_name, $value);
+    // For empty fields, $entity->field->property = $value automatically
+    // creates the item before assigning the value.
+    $item = $this->first() ?: $this->appendItem();
+    $item->__set($property_name, $value);
   }
 
   /**
    * {@inheritdoc}
    */
   public function __isset($property_name) {
-    return $this->first()->__isset($property_name);
+    if ($item = $this->first()) {
+      return $item->__isset($property_name);
+    }
+    return FALSE;
   }
 
   /**
    * {@inheritdoc}
    */
   public function __unset($property_name) {
-    return $this->first()->__unset($property_name);
+    if ($item = $this->first()) {
+      $item->__unset($property_name);
+    }
   }
 
   /**
@@ -207,16 +176,17 @@ class FieldItemList extends ItemList implements FieldItemListInterface {
    * {@inheritdoc}
    */
   public function applyDefaultValue($notify = TRUE) {
-    $value = $this->getFieldDefinition()->getDefaultValue($this->getEntity());
-
-    // NULL or array() mean "no default value", but  0, '0' and the empty string
-    // are valid default values.
-    if (!isset($value) || (is_array($value) && empty($value))) {
-      // Create one field item and apply defaults.
-      $this->first()->applyDefaultValue(FALSE);
+    if ($value = $this->getFieldDefinition()->getDefaultValue($this->getEntity())) {
+      $this->setValue($value, $notify);
     }
     else {
-      $this->setValue($value, $notify);
+      // Create one field item and give it a chance to apply its defaults.
+      // Remove it if this ended up doing nothing.
+      // @todo Having to create an item in case it wants to set a value is
+      // absurd. Remove that in https://www.drupal.org/node/2356623.
+      $item = $this->first() ?: $this->appendItem();
+      $item->applyDefaultValue(FALSE);
+      $this->filterEmptyItems();
     }
     return $this;
   }
@@ -266,10 +236,8 @@ class FieldItemList extends ItemList implements FieldItemListInterface {
    *   The name of the method.
    */
   protected function delegateMethod($method) {
-    if (isset($this->list)) {
-      foreach ($this->list as $item) {
-        $item->{$method}();
-      }
+    foreach ($this->list as $item) {
+      $item->{$method}();
     }
   }
 
@@ -336,6 +304,9 @@ class FieldItemList extends ItemList implements FieldItemListInterface {
     // Extract the submitted value, and validate it.
     $widget = $this->defaultValueWidget($form_state);
     $widget->extractFormValues($this, $element, $form_state);
+    // Force a non-required field definition.
+    // @see self::defaultValueWidget().
+    $this->definition->required = FALSE;
     $violations = $this->validate();
 
     // Assign reported errors to the correct form element.
@@ -357,7 +328,7 @@ class FieldItemList extends ItemList implements FieldItemListInterface {
   /**
    * {@inheritdoc}
    */
-  public static function processDefaultValue($default_value, ContentEntityInterface $entity, FieldDefinitionInterface $definition) {
+  public static function processDefaultValue($default_value, FieldableEntityInterface $entity, FieldDefinitionInterface $definition) {
     return $default_value;
   }
 

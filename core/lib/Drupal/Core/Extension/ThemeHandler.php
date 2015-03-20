@@ -13,8 +13,9 @@ use Drupal\Core\Cache\Cache;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ConfigInstallerInterface;
 use Drupal\Core\Config\ConfigManagerInterface;
+use Drupal\Core\Config\PreExistingConfigException;
+use Drupal\Core\Routing\RouteBuilderIndicatorInterface;
 use Drupal\Core\State\StateInterface;
-use Drupal\Core\Routing\RouteBuilder;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -87,11 +88,11 @@ class ThemeHandler implements ThemeHandlerInterface {
   protected $logger;
 
   /**
-   * The route builder to rebuild the routes if a theme is installed.
+   * The route builder indicator to rebuild the routes if a theme is installed.
    *
-   * @var \Drupal\Core\Routing\RouteBuilder
+   * @var \Drupal\Core\Routing\RouteBuilderIndicatorInterface
    */
-  protected $routeBuilder;
+  protected $routeBuilderIndicator;
 
   /**
    * An extension discovery instance.
@@ -115,8 +116,17 @@ class ThemeHandler implements ThemeHandlerInterface {
   protected $configManager;
 
   /**
+   * The app root.
+   *
+   * @var string
+   */
+  protected $root;
+
+  /**
    * Constructs a new ThemeHandler.
    *
+   * @param string $root
+   *   The app root.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The config factory to get the installed themes.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
@@ -135,13 +145,14 @@ class ThemeHandler implements ThemeHandlerInterface {
    *   database.
    * @param \Drupal\Core\Config\ConfigManagerInterface $config_manager
    *   The config manager used to uninstall a theme.
-   * @param \Drupal\Core\Routing\RouteBuilder $route_builder
-   *   (optional) The route builder to rebuild the routes if a theme is
-   *   installed.
+   * @param \Drupal\Core\Routing\RouteBuilderIndicatorInterface $route_builder_indicator
+   *   (optional) The route builder indicator service to rebuild the routes if a
+   *   theme is installed.
    * @param \Drupal\Core\Extension\ExtensionDiscovery $extension_discovery
    *   (optional) A extension discovery instance (for unit tests).
    */
-  public function __construct(ConfigFactoryInterface $config_factory, ModuleHandlerInterface $module_handler, StateInterface $state, InfoParserInterface $info_parser,LoggerInterface $logger, AssetCollectionOptimizerInterface $css_collection_optimizer = NULL, ConfigInstallerInterface $config_installer = NULL, ConfigManagerInterface $config_manager = NULL, RouteBuilder $route_builder = NULL, ExtensionDiscovery $extension_discovery = NULL) {
+  public function __construct($root, ConfigFactoryInterface $config_factory, ModuleHandlerInterface $module_handler, StateInterface $state, InfoParserInterface $info_parser,LoggerInterface $logger, AssetCollectionOptimizerInterface $css_collection_optimizer = NULL, ConfigInstallerInterface $config_installer = NULL, ConfigManagerInterface $config_manager = NULL, RouteBuilderIndicatorInterface $route_builder_indicator = NULL, ExtensionDiscovery $extension_discovery = NULL) {
+    $this->root = $root;
     $this->configFactory = $config_factory;
     $this->moduleHandler = $module_handler;
     $this->state = $state;
@@ -150,7 +161,7 @@ class ThemeHandler implements ThemeHandlerInterface {
     $this->cssCollectionOptimizer = $css_collection_optimizer;
     $this->configInstaller = $config_installer;
     $this->configManager = $config_manager;
-    $this->routeBuilder = $route_builder;
+    $this->routeBuilderIndicator = $route_builder_indicator;
     $this->extensionDiscovery = $extension_discovery;
   }
 
@@ -169,7 +180,7 @@ class ThemeHandler implements ThemeHandlerInterface {
     if (!isset($list[$name])) {
       throw new \InvalidArgumentException("$name theme is not installed.");
     }
-    $this->configFactory->get('system.theme')
+    $this->configFactory->getEditable('system.theme')
       ->set('default', $name)
       ->save();
     return $this;
@@ -179,7 +190,7 @@ class ThemeHandler implements ThemeHandlerInterface {
    * {@inheritdoc}
    */
   public function install(array $theme_list, $install_dependencies = TRUE) {
-    $extension_config = $this->configFactory->get('core.extension');
+    $extension_config = $this->configFactory->getEditable('core.extension');
 
     $theme_data = $this->rebuildThemeData();
 
@@ -245,6 +256,13 @@ class ThemeHandler implements ThemeHandlerInterface {
         )));
       }
 
+      // Validate default configuration of the theme. If there is existing
+      // configuration then stop installing.
+      $existing_configuration = $this->configInstaller->findPreExistingConfiguration('theme', $key);
+      if (!empty($existing_configuration)) {
+        throw PreExistingConfigException::create($key, $existing_configuration);
+      }
+
       // The value is not used; the weight is ignored for themes currently.
       $extension_config
         ->set("theme.$key", 0)
@@ -303,8 +321,8 @@ class ThemeHandler implements ThemeHandlerInterface {
    * {@inheritdoc}
    */
   public function uninstall(array $theme_list) {
-    $extension_config = $this->configFactory->get('core.extension');
-    $theme_config = $this->configFactory->get('system.theme');
+    $extension_config = $this->configFactory->getEditable('core.extension');
+    $theme_config = $this->configFactory->getEditable('system.theme');
     $list = $this->listInfo();
     foreach ($theme_list as $key) {
       if (!isset($list[$key])) {
@@ -386,12 +404,6 @@ class ThemeHandler implements ThemeHandlerInterface {
    * {@inheritdoc}
    */
   public function addTheme(Extension $theme) {
-    // @todo Remove this 100% unnecessary duplication of properties.
-    foreach ($theme->info['stylesheets'] as $media => $stylesheets) {
-      foreach ($stylesheets as $stylesheet => $path) {
-        $theme->stylesheets[$media][$stylesheet] = $path;
-      }
-    }
     foreach ($theme->info['libraries'] as $library => $name) {
       $theme->libraries[$library] = $name;
     }
@@ -456,12 +468,12 @@ class ThemeHandler implements ThemeHandlerInterface {
         'help' => 'Help',
         'page_top' => 'Page top',
         'page_bottom' => 'Page bottom',
+        'breadcrumb' => 'Breadcrumb',
       ),
       'description' => '',
       'features' => $this->defaultFeatures,
       'screenshot' => 'screenshot.png',
       'php' => DRUPAL_MINIMUM_PHP,
-      'stylesheets' => array(),
       'libraries' => array(),
     );
 
@@ -497,11 +509,9 @@ class ThemeHandler implements ThemeHandlerInterface {
         $theme->prefix = $engines[$engine]->getName();
       }
 
-      // Prefix stylesheets and screenshot with theme path.
-      $path = $theme->getPath();
-      $theme->info['stylesheets'] = $this->themeInfoPrefixPath($theme->info['stylesheets'], $path);
+      // Prefix screenshot with theme path.
       if (!empty($theme->info['screenshot'])) {
-        $theme->info['screenshot'] = $path . '/' . $theme->info['screenshot'];
+        $theme->info['screenshot'] = $theme->getPath() . '/' . $theme->info['screenshot'];
       }
 
       $files[$key] = $theme->getPathname();
@@ -543,41 +553,6 @@ class ThemeHandler implements ThemeHandlerInterface {
     }
 
     return $themes;
-  }
-
-  /**
-   * Prefixes all values in an .info.yml file array with a given path.
-   *
-   * This helper function is mainly used to prefix all array values of an
-   * .info.yml file property with a single given path (to the module or theme);
-   * e.g., to prefix all values of the 'stylesheets' properties
-   * with the file path to the defining module/theme.
-   *
-   * @param array $info
-   *   A nested array of data of an .info.yml file to be processed.
-   * @param string $path
-   *   A file path to prepend to each value in $info.
-   *
-   * @return array
-   *   The $info array with prefixed values.
-   *
-   * @see _system_rebuild_module_data()
-   * @see self::rebuildThemeData()
-   */
-  protected function themeInfoPrefixPath(array $info, $path) {
-    foreach ($info as $key => $value) {
-      // Recurse into nested values until we reach the deepest level.
-      if (is_array($value)) {
-        $info[$key] = $this->themeInfoPrefixPath($info[$key], $path);
-      }
-      // Unset the original value's key and set the new value with prefix, using
-      // the original value as key, so original values can still be looked up.
-      else {
-        unset($info[$key]);
-        $info[$value] = $path . '/' . $value;
-      }
-    }
-    return $info;
   }
 
   /**
@@ -639,7 +614,7 @@ class ThemeHandler implements ThemeHandlerInterface {
    */
   protected function getExtensionDiscovery() {
     if (!isset($this->extensionDiscovery)) {
-      $this->extensionDiscovery = new ExtensionDiscovery();
+      $this->extensionDiscovery = new ExtensionDiscovery($this->root);
     }
     return $this->extensionDiscovery;
   }
@@ -648,14 +623,14 @@ class ThemeHandler implements ThemeHandlerInterface {
    * Resets some other systems like rebuilding the route information or caches.
    */
   protected function resetSystem() {
-    if ($this->routeBuilder) {
-      $this->routeBuilder->setRebuildNeeded();
+    if ($this->routeBuilderIndicator) {
+      $this->routeBuilderIndicator->setRebuildNeeded();
     }
     $this->systemListReset();
 
     // @todo It feels wrong to have the requirement to clear the local tasks
     //   cache here.
-    Cache::deleteTags(array('local_task'));
+    Cache::invalidateTags(array('local_task'));
     $this->themeRegistryRebuild();
   }
 
@@ -700,7 +675,7 @@ class ThemeHandler implements ThemeHandlerInterface {
   public function getThemeDirectories() {
     $dirs = array();
     foreach ($this->listInfo() as $name => $theme) {
-      $dirs[$name] = DRUPAL_ROOT . '/' . $theme->getPath();
+      $dirs[$name] = $this->root . '/' . $theme->getPath();
     }
     return $dirs;
   }

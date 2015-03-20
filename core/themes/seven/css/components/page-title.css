@@ -1,10 +1,7 @@
 /**
  * Page title.
  */
-#page-title {
-  padding-top: 20px;
-}
-#branding .page-title {
+.content-header .page-title {
   color: #333;
   display: inline-block;
   margin: 0;
@@ -12,7 +9,4 @@
   line-height: 1.875em;
   font-weight: 600;
   -webkit-font-smoothing: antialiased;
-}
-[dir="rtl"] #branding h1.page-title {
-  float: right;
 }

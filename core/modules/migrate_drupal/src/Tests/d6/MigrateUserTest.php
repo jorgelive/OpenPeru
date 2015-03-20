@@ -7,16 +7,18 @@
 
 namespace Drupal\migrate_drupal\Tests\d6;
 
+use Drupal\user\Entity\User;
+use Drupal\file\Entity\File;
 use Drupal\Core\Database\Database;
 use Drupal\migrate\MigrateExecutable;
-use Drupal\migrate_drupal\Tests\MigrateDrupalTestBase;
+use Drupal\migrate_drupal\Tests\d6\MigrateDrupal6TestBase;
 
 /**
  * Users migration.
  *
  * @group migrate_drupal
  */
-class MigrateUserTest extends MigrateDrupalTestBase {
+class MigrateUserTest extends MigrateDrupal6TestBase {
 
   /**
    * The modules to be enabled during the test.
@@ -83,10 +85,16 @@ class MigrateUserTest extends MigrateDrupalTestBase {
 
     // Load database dumps to provide source data.
     $dumps = array(
-      $this->getDumpDirectory() . '/Drupal6FilterFormat.php',
-      $this->getDumpDirectory() . '/Drupal6UserProfileFields.php',
-      $this->getDumpDirectory() . '/Drupal6UserRole.php',
-      $this->getDumpDirectory() . '/Drupal6User.php',
+      $this->getDumpDirectory() . '/Filters.php',
+      $this->getDumpDirectory() . '/FilterFormats.php',
+      $this->getDumpDirectory() . '/Variable.php',
+      $this->getDumpDirectory() . '/ProfileFields.php',
+      $this->getDumpDirectory() . '/Permission.php',
+      $this->getDumpDirectory() . '/Role.php',
+      $this->getDumpDirectory() . '/Users.php',
+      $this->getDumpDirectory() . '/ProfileValues.php',
+      $this->getDumpDirectory() . '/UsersRoles.php',
+      $this->getDumpDirectory() . '/EventTimezones.php',
     );
     $this->loadDumps($dumps);
 
@@ -149,33 +157,33 @@ class MigrateUserTest extends MigrateDrupalTestBase {
       }
       // Get the user signature format.
       $migration_format = entity_load('migration', 'd6_filter_format');
-      $signature_format = $migration_format->getIdMap()->lookupDestinationId(array($source->signature_format));
+      $signature_format = $source->signature_format === '0' ? [NULL] : $migration_format->getIdMap()->lookupDestinationId(array($source->signature_format));
 
-      $user = user_load($source->uid);
-      $this->assertEqual($user->id(), $source->uid);
-      $this->assertEqual($user->label(), $source->name);
-      $this->assertEqual($user->getEmail(), $source->mail);
-      $this->assertEqual($user->getSignature(), $source->signature);
-      $this->assertEqual($user->getSignatureFormat(), reset($signature_format));
-      $this->assertEqual($user->getCreatedTime(), $source->created);
-      $this->assertEqual($user->getLastAccessedTime(), $source->access);
-      $this->assertEqual($user->getLastLoginTime(), $source->login);
+      $user = User::load($source->uid);
+      $this->assertIdentical($user->id(), $source->uid);
+      $this->assertIdentical($user->label(), $source->name);
+      $this->assertIdentical($user->getEmail(), $source->mail);
+      $this->assertIdentical($user->getSignature(), $source->signature);
+      $this->assertIdentical($user->getSignatureFormat(), reset($signature_format));
+      $this->assertIdentical($user->getCreatedTime(), $source->created);
+      $this->assertIdentical($user->getLastAccessedTime(), $source->access);
+      $this->assertIdentical($user->getLastLoginTime(), $source->login);
       $is_blocked = $source->status == 0;
-      $this->assertEqual($user->isBlocked(), $is_blocked);
+      $this->assertIdentical($user->isBlocked(), $is_blocked);
       // $user->getPreferredLangcode() might fallback to default language if the
       // user preferred language is not configured on the site. We just want to
       // test if the value was imported correctly.
-      $this->assertEqual($user->preferred_langcode->value, $source->language);
-      $time_zone = $source->expected_timezone ?: \Drupal::config('system.date')->get('timezone.default');
-      $this->assertEqual($user->getTimeZone(), $time_zone);
-      $this->assertEqual($user->getInitialEmail(), $source->init);
-      $this->assertEqual($user->getRoles(), $roles);
+      $this->assertIdentical($user->preferred_langcode->value, $source->language);
+      $time_zone = $source->expected_timezone ?: $this->config('system.date')->get('timezone.default');
+      $this->assertIdentical($user->getTimeZone(), $time_zone);
+      $this->assertIdentical($user->getInitialEmail(), $source->init);
+      $this->assertIdentical($user->getRoles(), $roles);
 
       // We have one empty picture in the data so don't try load that.
       if (!empty($source->picture)) {
         // Test the user picture.
-        $file = file_load($user->user_picture->target_id);
-        $this->assertEqual($file->getFilename(), basename($source->picture));
+        $file = File::load($user->user_picture->target_id);
+        $this->assertIdentical($file->getFilename(), basename($source->picture));
       }
 
       // Use the UI to check if the password has been salted and re-hashed to

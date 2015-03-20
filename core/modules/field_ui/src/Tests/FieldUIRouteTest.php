@@ -17,9 +17,11 @@ use Drupal\simpletest\WebTestBase;
 class FieldUIRouteTest extends WebTestBase {
 
   /**
-   * Modules to enable.
+   * Modules to install.
+   *
+   * @var string[]
    */
-  public static $modules = array('field_ui_test');
+  public static $modules = array('entity_test', 'field_ui');
 
   /**
    * {@inheritdoc}
@@ -27,17 +29,15 @@ class FieldUIRouteTest extends WebTestBase {
   protected function setUp() {
     parent::setUp();
 
-    $this->drupalLogin($this->root_user);
+    $this->drupalLogin($this->rootUser);
   }
 
   /**
    * Ensures that entity types with bundles do not break following entity types.
    */
   public function testFieldUIRoutes() {
-    $this->drupalGet('field-ui-test-no-bundle/manage/fields');
-    // @todo Bring back this assertion in https://drupal.org/node/1963340.
-    // @see \Drupal\field_ui\FieldOverview::getRegions()
-    //$this->assertText('No fields are present yet.');
+    $this->drupalGet('entity_test_no_id/structure/entity_test/fields');
+    $this->assertText('No fields are present yet.');
 
     $this->drupalGet('admin/config/people/accounts/fields');
     $this->assertTitle('Manage fields | Drupal');
@@ -67,6 +67,7 @@ class FieldUIRouteTest extends WebTestBase {
 
     $edit = array('display_modes_custom[register]' => TRUE);
     $this->drupalPostForm(NULL, $edit, t('Save'));
+    $this->assertResponse(200);
     $this->drupalGet('admin/config/people/accounts/form-display/register');
     $this->assertTitle('Manage form display | Drupal');
     $this->assertLocalTasks();

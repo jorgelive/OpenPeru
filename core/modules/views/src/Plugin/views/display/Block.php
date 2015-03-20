@@ -84,8 +84,8 @@ class Block extends DisplayPluginBase {
   protected function defineOptions() {
     $options = parent::defineOptions();
 
-    $options['block_description'] = array('default' => '', 'translatable' => TRUE);
-    $options['block_category'] = array('default' => 'Lists (Views)', 'translatable' => TRUE);
+    $options['block_description'] = array('default' => '');
+    $options['block_category'] = array('default' => 'Lists (Views)');
     $options['block_hide_empty'] = array('default' => FALSE);
 
     $options['allow'] = array(
@@ -332,6 +332,7 @@ class Block extends DisplayPluginBase {
     if ($items_per_page = $form_state->getValue(array('override', 'items_per_page'))) {
       $block->setConfigurationValue('items_per_page', $items_per_page);
     }
+    $form_state->unsetValue(array('override', 'items_per_page'));
   }
 
   /**

@@ -7,6 +7,8 @@
 
 namespace Drupal\views\Tests\Plugin;
 
+use Drupal\Component\Utility\Html;
+use Drupal\Core\Url;
 use Drupal\views\Tests\ViewTestBase;
 use Drupal\views\ViewExecutable;
 use Drupal\views\Views;
@@ -100,6 +102,11 @@ class ExposedFormTest extends ViewTestBase {
     // Test the button is hidden after reset.
     $this->assertNoField('edit-reset');
 
+    // Test the reset works with type set.
+    $this->drupalGet('test_exposed_form_buttons', array('query' => array('type' => 'article', 'op' => 'Reset')));
+    $this->assertResponse(200);
+    $this->assertFieldById('edit-type', 'All', 'Article type filter has been reset.');
+
     // Rename the label of the reset button.
     $view = Views::getView('test_exposed_form_buttons');
     $view->setDisplay();
@@ -125,12 +132,16 @@ class ExposedFormTest extends ViewTestBase {
     $this->executeView($view);
     $exposed_form = $view->display_handler->getPlugin('exposed_form');
     $output = $exposed_form->renderExposedForm();
-    $this->drupalSetContent(drupal_render($output));
+    $this->setRawContent(drupal_render($output));
 
     $this->assertFieldByXpath('//form/@id', $this->getExpectedExposedFormId($view), 'Expected form ID found.');
 
-    $expected_action = _url($view->display_handler->getUrl());
+    $view->setDisplay('page_1');
+    $expected_action = $view->display_handler->getUrlInfo()->toString();
     $this->assertFieldByXPath('//form/@action', $expected_action, 'The expected value for the action attribute was found.');
+    // Make sure the description is shown.
+    $result = $this->xpath('//form//div[contains(@id, :id) and normalize-space(text())=:description]', array(':id' => 'edit-type--description', ':description' => t('Exposed description')));
+    $this->assertEqual(count($result), 1, 'Filter description was found.');
   }
 
   /**
@@ -189,7 +200,7 @@ class ExposedFormTest extends ViewTestBase {
    *   The form ID.
    */
   protected function getExpectedExposedFormId(ViewExecutable $view) {
-    return drupal_clean_css_identifier('views-exposed-form-' . $view->storage->id() . '-' . $view->current_display);
+    return Html::cleanCssIdentifier('views-exposed-form-' . $view->storage->id() . '-' . $view->current_display);
   }
 
 }

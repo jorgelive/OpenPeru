@@ -7,6 +7,8 @@
 
 namespace Drupal\system\Tests\Entity;
 
+use Drupal\user\Entity\Role;
+
 /**
  * Tests the entity view builder.
  *
@@ -26,13 +28,20 @@ class EntityViewBuilderTest extends EntityUnitTestBase {
    */
   protected function setUp() {
     parent::setUp();
-    $this->installConfig(array('entity_test'));
+    $this->installConfig(array('user', 'entity_test'));
+
+    // Give anonymous users permission to view test entities.
+    Role::load(DRUPAL_ANONYMOUS_RID)
+      ->grantPermission('view test entity')
+      ->save();
   }
 
   /**
    * Tests entity render cache handling.
    */
   public function testEntityViewBuilderCache() {
+    $cache_contexts = \Drupal::service("cache_contexts");
+
     // Force a request via GET so we can get drupal_render() cache working.
     $request = \Drupal::request();
     $request_method = $request->server->get('REQUEST_METHOD');
@@ -48,7 +57,8 @@ class EntityViewBuilderTest extends EntityUnitTestBase {
     // Get a fully built entity view render array.
     $entity_test->save();
     $build = $this->container->get('entity.manager')->getViewBuilder('entity_test')->view($entity_test, 'full');
-    $cid = drupal_render_cid_create($build);
+    $cid_parts = array_merge($build['#cache']['keys'], $cache_contexts->convertTokensToKeys($build['#cache']['contexts']));
+    $cid = implode(':', $cid_parts);
     $bin = $build['#cache']['bin'];
 
     // Mock the build array to not require the theme registry.
@@ -79,6 +89,8 @@ class EntityViewBuilderTest extends EntityUnitTestBase {
    * Tests entity render cache with references.
    */
   public function testEntityViewBuilderCacheWithReferences() {
+    $cache_contexts = \Drupal::service("cache_contexts");
+
     // Force a request via GET so we can get drupal_render() cache working.
     $request = \Drupal::request();
     $request_method = $request->server->get('REQUEST_METHOD');
@@ -87,6 +99,7 @@ class EntityViewBuilderTest extends EntityUnitTestBase {
     // Create an entity reference field and an entity that will be referenced.
     entity_reference_create_field('entity_test', 'entity_test', 'reference_field', 'Reference', 'entity_test');
     entity_get_display('entity_test', 'entity_test', 'full')->setComponent('reference_field', [
+      'type' => 'entity_reference_entity_view',
       'settings' => ['link' => FALSE],
     ])->save();
     $entity_test_reference = $this->createTestEntity('entity_test');
@@ -94,7 +107,8 @@ class EntityViewBuilderTest extends EntityUnitTestBase {
 
     // Get a fully built entity view render array for the referenced entity.
     $build = $this->container->get('entity.manager')->getViewBuilder('entity_test')->view($entity_test_reference, 'full');
-    $cid_reference = drupal_render_cid_create($build);
+    $cid_parts = array_merge($build['#cache']['keys'], $cache_contexts->convertTokensToKeys($build['#cache']['contexts']));
+    $cid_reference = implode(':', $cid_parts);
     $bin_reference = $build['#cache']['bin'];
 
     // Mock the build array to not require the theme registry.
@@ -112,7 +126,8 @@ class EntityViewBuilderTest extends EntityUnitTestBase {
 
     // Get a fully built entity view render array.
     $build = $this->container->get('entity.manager')->getViewBuilder('entity_test')->view($entity_test, 'full');
-    $cid = drupal_render_cid_create($build);
+    $cid_parts = array_merge($build['#cache']['keys'], $cache_contexts->convertTokensToKeys($build['#cache']['contexts']));
+    $cid = implode(':', $cid_parts);
     $bin = $build['#cache']['bin'];
 
     // Mock the build array to not require the theme registry.
@@ -124,7 +139,7 @@ class EntityViewBuilderTest extends EntityUnitTestBase {
     $this->assertTrue($this->container->get('cache.' . $bin)->get($cid), 'The entity render element has been cached.');
 
     // Save the entity and verify that both cache entries have been deleted.
-    $entity_test->save();
+    $entity_test_reference->save();
     $this->assertFalse($this->container->get('cache.' . $bin)->get($cid), 'The entity render cache has been cleared when the entity was deleted.');
     $this->assertFalse($this->container->get('cache.' . $bin_reference)->get($cid_reference), 'The entity render cache for the referenced entity has been cleared when the entity was deleted.');
 
@@ -142,7 +157,7 @@ class EntityViewBuilderTest extends EntityUnitTestBase {
     // Test a view mode in default conditions: render caching is enabled for
     // the entity type and the view mode.
     $build = $this->container->get('entity.manager')->getViewBuilder('entity_test')->view($entity_test, 'full');
-    $this->assertTrue(isset($build['#cache']) && array_keys($build['#cache']) == array('tags', 'keys', 'bin') , 'A view mode with render cache enabled has the correct output (cache tags, keys and bin).');
+    $this->assertTrue(isset($build['#cache']) && array_keys($build['#cache']) == array('tags', 'keys', 'contexts', 'bin') , 'A view mode with render cache enabled has the correct output (cache tags, keys, contexts and bin).');
 
     // Test that a view mode can opt out of render caching.
     $build = $this->container->get('entity.manager')->getViewBuilder('entity_test')->view($entity_test, 'test');

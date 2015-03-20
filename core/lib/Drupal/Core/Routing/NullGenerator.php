@@ -38,13 +38,19 @@ class NullGenerator extends UrlGenerator {
     if ($name === '<front>') {
       return new Route('/');
     }
+    elseif ($name === '<current>') {
+      return new Route($this->requestStack->getCurrentRequest()->getPathInfo());
+    }
+    elseif ($name === '<none>') {
+      return new Route('');
+    }
     throw new RouteNotFoundException();
   }
 
   /**
    * {@inheritdoc}
    */
-  protected function processRoute(Route $route, array &$parameters) {
+  protected function processRoute($name, Route $route, array &$parameters) {
   }
 
   /**

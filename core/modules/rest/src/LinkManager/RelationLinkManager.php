@@ -11,8 +11,9 @@ use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Entity\ContentEntityTypeInterface;
 use Drupal\Core\Entity\EntityManagerInterface;
+use Drupal\Core\Utility\UnroutedUrlAssemblerInterface;
 
-class RelationLinkManager implements RelationLinkManagerInterface{
+class RelationLinkManager implements RelationLinkManagerInterface {
 
   /**
    * @var \Drupal\Core\Cache\CacheBackendInterface;
@@ -27,28 +28,37 @@ class RelationLinkManager implements RelationLinkManagerInterface{
   protected $entityManager;
 
   /**
+   * The unrouted URL assembler.
+   *
+   * @var \Drupal\Core\Utility\UnroutedUrlAssemblerInterface
+   */
+  protected $urlAssembler;
+
+  /**
    * Constructor.
    *
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
    *   The cache of relation URIs and their associated Typed Data IDs.
    * @param \Drupal\Core\Entity\EntityManagerInterface $entity_manager
    *   The entity manager.
+   * @param \Drupal\Core\Utility\UnroutedUrlAssemblerInterface $url_assembler
+   *   The unrouted URL assembler.
    */
-  public function __construct(CacheBackendInterface $cache, EntityManagerInterface $entity_manager) {
+  public function __construct(CacheBackendInterface $cache, EntityManagerInterface $entity_manager, UnroutedUrlAssemblerInterface $url_assembler) {
     $this->cache = $cache;
     $this->entityManager = $entity_manager;
+    $this->urlAssembler = $url_assembler;
   }
 
   /**
-   * Implements \Drupal\rest\LinkManager\RelationLinkManagerInterface::getRelationUri().
+   * {@inheritdoc}
    */
   public function getRelationUri($entity_type, $bundle, $field_name) {
-    // @todo Make the base path configurable.
-    return _url("rest/relation/$entity_type/$bundle/$field_name", array('absolute' => TRUE));
+    return $this->urlAssembler->assemble("base:rest/relation/$entity_type/$bundle/$field_name", array('absolute' => TRUE));
   }
 
   /**
-   * Implements \Drupal\rest\LinkManager\RelationLinkManagerInterface::getRelationInternalIds().
+   * {@inheritdoc}
    */
   public function getRelationInternalIds($relation_uri) {
     $relations = $this->getRelations();
@@ -71,7 +81,7 @@ class RelationLinkManager implements RelationLinkManagerInterface{
    *   An array of typed data ids (entity_type, bundle, and field name) keyed
    *   by corresponding relation URI.
    */
-  public function getRelations() {
+  protected function getRelations() {
     $cid = 'rest:links:relations';
     $cache = $this->cache->get($cid);
     if (!$cache) {

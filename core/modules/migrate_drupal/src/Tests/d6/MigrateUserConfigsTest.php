@@ -9,14 +9,14 @@ namespace Drupal\migrate_drupal\Tests\d6;
 
 use Drupal\config\Tests\SchemaCheckTestTrait;
 use Drupal\migrate\MigrateExecutable;
-use Drupal\migrate_drupal\Tests\MigrateDrupalTestBase;
+use Drupal\migrate_drupal\Tests\d6\MigrateDrupal6TestBase;
 
 /**
  * Upgrade variables to user.*.yml.
  *
  * @group migrate_drupal
  */
-class MigrateUserConfigsTest extends MigrateDrupalTestBase {
+class MigrateUserConfigsTest extends MigrateDrupal6TestBase {
 
   use SchemaCheckTestTrait;
 
@@ -25,11 +25,15 @@ class MigrateUserConfigsTest extends MigrateDrupalTestBase {
    */
   protected function setUp() {
     parent::setUp();
-    $migration = entity_load('migration', 'd6_user_mail');
     $dumps = array(
-      $this->getDumpDirectory() . '/Drupal6UserMail.php',
+      $this->getDumpDirectory() . '/Variable.php',
     );
+    $migration = entity_load('migration', 'd6_user_mail');
     $this->prepare($migration, $dumps);
+    $executable = new MigrateExecutable($migration, $this);
+    $executable->import();
+
+    $migration = entity_load('migration', 'd6_user_settings');
     $executable = new MigrateExecutable($migration, $this);
     $executable->import();
   }
@@ -38,7 +42,7 @@ class MigrateUserConfigsTest extends MigrateDrupalTestBase {
    * Tests migration of user variables to user.mail.yml.
    */
   public function testUserMail() {
-    $config = \Drupal::config('user.mail');
+    $config = $this->config('user.mail');
     $this->assertIdentical($config->get('status_activated.subject'), 'Account details for !username at !site (approved)');
     $this->assertIdentical($config->get('status_activated.body'), "!username,\n\nYour account at !site has been activated.\n\nYou may now log in by clicking on this link or copying and pasting it in your browser:\n\n!login_url\n\nThis is a one-time login, so it can be used only once.\n\nAfter logging in, you will be redirected to !edit_uri so you can change your password.\n\nOnce you have set your own password, you will be able to log in to !login_uri in the future using:\n\nusername: !username\n");
     $this->assertIdentical($config->get('password_reset.subject'), 'Replacement login information for !username at !site');
@@ -54,6 +58,19 @@ class MigrateUserConfigsTest extends MigrateDrupalTestBase {
     $this->assertIdentical($config->get('status_blocked.subject'), 'Account details for !username at !site (blocked)');
     $this->assertIdentical($config->get('status_blocked.body'), "!username,\n\nYour account on !site has been blocked.");
     $this->assertConfigSchema(\Drupal::service('config.typed'), 'user.mail', $config->get());
+  }
+
+  /**
+   * Tests migration of user variables to user.settings.yml.
+   */
+  public function testUserSettings() {
+    $config = $this->config('user.settings');
+    $this->assertIdentical($config->get('notify.status_blocked'), TRUE);
+    $this->assertIdentical($config->get('notify.status_activated'), FALSE);
+    $this->assertIdentical($config->get('signatures'), TRUE);
+    $this->assertIdentical($config->get('verify_mail'), FALSE);
+    $this->assertIdentical($config->get('register'), 'admin_only');
+    $this->assertIdentical($config->get('anonymous'), 'Guest');
   }
 
 }

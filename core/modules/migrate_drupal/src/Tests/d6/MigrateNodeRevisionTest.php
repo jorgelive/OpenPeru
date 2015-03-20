@@ -8,7 +8,7 @@
 namespace Drupal\migrate_drupal\Tests\d6;
 
 use Drupal\migrate\MigrateExecutable;
-use Drupal\migrate_drupal\Tests\Dump\Drupal6User;
+use Drupal\Core\Database\Database;
 
 /**
  * Node content revisions migration.
@@ -22,12 +22,7 @@ class MigrateNodeRevisionTest extends MigrateNodeTestBase {
    */
   protected function setUp() {
     parent::setUp();
-    // Create our users for the node authors.
-    foreach (Drupal6User::getData('users') as $u) {
-      $user = entity_create('user', $u);
-      $user->enforceIsNew();
-      $user->save();
-    }
+
     $id_mappings = array(
       'd6_node' => array(
         array(array(1), array(1)),
@@ -36,9 +31,18 @@ class MigrateNodeRevisionTest extends MigrateNodeTestBase {
     $this->prepareMigrations($id_mappings);
 
     $dumps = array(
-      $this->getDumpDirectory() . '/Drupal6NodeRevision.php',
+      $this->getDumpDirectory() . '/Users.php',
     );
     $this->loadDumps($dumps);
+
+    // Create our users for the node authors.
+    $query = Database::getConnection('default', 'migrate')->query('SELECT * FROM {users} WHERE uid NOT IN (0, 1)');
+    while(($row = $query->fetchAssoc()) !== FALSE) {
+      $user = entity_create('user', $row);
+      $user->enforceIsNew();
+      $user->save();
+    }
+
     /** @var \Drupal\migrate\entity\Migration $migration */
     $migration = entity_load('migration', 'd6_node_revision');
     $executable = new MigrateExecutable($migration, $this);
@@ -51,22 +55,22 @@ class MigrateNodeRevisionTest extends MigrateNodeTestBase {
   public function testNodeRevision() {
     $node = \Drupal::entityManager()->getStorage('node')->loadRevision(2);
     /** @var \Drupal\node\NodeInterface $node */
-    $this->assertEqual($node->id(), 1);
-    $this->assertEqual($node->getRevisionId(), 2);
-    $this->assertEqual($node->langcode->value, 'und');
-    $this->assertEqual($node->getTitle(), 'Test title rev 2');
-    $this->assertEqual($node->body->value, 'body test rev 2');
-    $this->assertEqual($node->body->summary, 'teaser test rev 2');
-    $this->assertEqual($node->getRevisionAuthor()->id(), 2);
-    $this->assertEqual($node->revision_log->value, 'modified rev 2');
-    $this->assertEqual($node->getRevisionCreationTime(), '1390095702');
+    $this->assertIdentical($node->id(), '1');
+    $this->assertIdentical($node->getRevisionId(), '2');
+    $this->assertIdentical($node->langcode->value, 'und');
+    $this->assertIdentical($node->getTitle(), 'Test title rev 2');
+    $this->assertIdentical($node->body->value, 'body test rev 2');
+    $this->assertIdentical($node->body->summary, 'teaser test rev 2');
+    $this->assertIdentical($node->getRevisionAuthor()->id(), '2');
+    $this->assertIdentical($node->revision_log->value, 'modified rev 2');
+    $this->assertIdentical($node->getRevisionCreationTime(), '1390095702');
 
     $node = \Drupal::entityManager()->getStorage('node')->loadRevision(5);
-    $this->assertEqual($node->id(), 1);
-    $this->assertEqual($node->body->value, 'body test rev 3');
-    $this->assertEqual($node->getRevisionAuthor()->id(), 1);
-    $this->assertEqual($node->revision_log->value, 'modified rev 3');
-    $this->assertEqual($node->getRevisionCreationTime(), '1390095703');
+    $this->assertIdentical($node->id(), '1');
+    $this->assertIdentical($node->body->value, 'body test rev 3');
+    $this->assertIdentical($node->getRevisionAuthor()->id(), '1');
+    $this->assertIdentical($node->revision_log->value, 'modified rev 3');
+    $this->assertIdentical($node->getRevisionCreationTime(), '1390095703');
   }
 
 }

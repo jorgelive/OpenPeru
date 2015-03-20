@@ -39,6 +39,7 @@ class SystemMenuBlockTest extends KernelTestBase {
     'menu_link_content',
     'field',
     'user',
+    'link',
   );
 
   /**
@@ -162,7 +163,7 @@ class SystemMenuBlockTest extends KernelTestBase {
 
     $dependencies = $block->calculateDependencies();
     $expected = array(
-      'entity' => array(
+      'config' => array(
         'system.menu.' . $this->menu->id()
       ),
       'module' => array(

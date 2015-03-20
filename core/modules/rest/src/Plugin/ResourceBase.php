@@ -87,7 +87,7 @@ abstract class ResourceBase extends PluginBase implements ContainerFactoryPlugin
     foreach ($this->availableMethods() as $method) {
       $lowered_method = strtolower($method);
       $permissions["restful $lowered_method $this->pluginId"] = array(
-        'title' => t('Access @method on %label resource', array('@method' => $method, '%label' => $definition['label'])),
+        'title' => $this->t('Access @method on %label resource', array('@method' => $method, '%label' => $definition['label'])),
       );
     }
     return $permissions;
@@ -207,7 +207,11 @@ abstract class ResourceBase extends PluginBase implements ContainerFactoryPlugin
       '_method' => $method,
       '_permission' => "restful $lower_method $this->pluginId",
     ), array(
-      '_access_mode' => AccessManagerInterface::ACCESS_MODE_ANY,
+      // All access restrictions on this route must grant access because the
+      // permission AND the CSRF protection added in
+      // \Drupal\rest\Routing\ResourceRoutes::alterRoutes() must be taken into
+      // account.
+      '_access_mode' => AccessManagerInterface::ACCESS_MODE_ALL,
     ));
     return $route;
   }

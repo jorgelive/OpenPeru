@@ -8,15 +8,15 @@
 namespace Drupal\migrate_drupal\Tests\d6;
 
 use Drupal\migrate\MigrateExecutable;
-use Drupal\migrate_drupal\Tests\MigrateDrupalTestBase;
-use Drupal\migrate_drupal\Tests\Dump\Drupal6UserProfileFields;
+use Drupal\migrate_drupal\Tests\d6\MigrateDrupal6TestBase;
+use Drupal\Core\Database\Database;
 
 /**
  * Tests the user profile entity form display migration.
  *
  * @group migrate_drupal
  */
-class MigrateUserProfileEntityFormDisplayTest extends MigrateDrupalTestBase {
+class MigrateUserProfileEntityFormDisplayTest extends MigrateDrupal6TestBase {
 
   static $modules = array('link', 'options', 'datetime');
 
@@ -68,24 +68,33 @@ class MigrateUserProfileEntityFormDisplayTest extends MigrateDrupalTestBase {
       'field_name' => 'profile_love_migrations',
       'type' => 'boolean',
     ))->save();
-    $field_data = Drupal6UserProfileFields::getData('profile_fields');
+
+    $migration = entity_load('migration', 'd6_user_profile_entity_form_display');
+    $dumps = array(
+      $this->getDumpDirectory() . '/ProfileFields.php',
+      $this->getDumpDirectory() . '/Users.php',
+      $this->getDumpDirectory() . '/ProfileValues.php',
+      $this->getDumpDirectory() . '/UsersRoles.php',
+      $this->getDumpDirectory() . '/EventTimezones.php',
+    );
+    $this->prepare($migration, $dumps);
+
+    $field_data = Database::getConnection('default', 'migrate')
+      ->select('profile_fields', 'u')
+      ->fields('u')
+      ->execute()
+      ->fetchAll();
     foreach ($field_data as $field) {
       entity_create('field_config', array(
-        'label' => $field['title'],
+        'label' => $field->title,
         'description' => '',
-        'field_name' => $field['name'],
+        'field_name' => $field->name,
         'entity_type' => 'user',
         'bundle' => 'user',
         'required' => 1,
       ))->save();
     }
 
-    $migration = entity_load('migration', 'd6_user_profile_entity_form_display');
-    $dumps = array(
-      $this->getDumpDirectory() . '/Drupal6UserProfileFields.php',
-      $this->getDumpDirectory() . '/Drupal6User.php',
-    );
-    $this->prepare($migration, $dumps);
     $executable = new MigrateExecutable($migration, $this);
     $executable->import();
   }
@@ -98,15 +107,15 @@ class MigrateUserProfileEntityFormDisplayTest extends MigrateDrupalTestBase {
 
     // Test a text field.
     $component = $display->getComponent('profile_color');
-    $this->assertEqual($component['type'], 'text_textfield');
+    $this->assertIdentical($component['type'], 'text_textfield');
 
     // Test a list field.
     $component = $display->getComponent('profile_bands');
-    $this->assertEqual($component['type'], 'text_textfield');
+    $this->assertIdentical($component['type'], 'text_textfield');
 
     // Test a date field.
     $component = $display->getComponent('profile_birthdate');
-    $this->assertEqual($component['type'], 'datetime_default');
+    $this->assertIdentical($component['type'], 'datetime_default');
 
     // Test PROFILE_PRIVATE field is hidden.
     $this->assertNull($display->getComponent('profile_sell_address'));
@@ -116,8 +125,8 @@ class MigrateUserProfileEntityFormDisplayTest extends MigrateDrupalTestBase {
 
     // Test that a checkbox field has the proper display label setting.
     $component = $display->getComponent('profile_love_migrations');
-    $this->assertEqual($component['type'], 'boolean_checkbox');
-    $this->assertEqual($component['settings']['display_label'], true);
+    $this->assertIdentical($component['type'], 'boolean_checkbox');
+    $this->assertIdentical($component['settings']['display_label'], true);
   }
 
 }

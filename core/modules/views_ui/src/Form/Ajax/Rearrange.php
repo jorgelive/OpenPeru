@@ -8,7 +8,8 @@
 namespace Drupal\views_ui\Form\Ajax;
 
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\views\ViewStorageInterface;
+use Drupal\Core\Url;
+use Drupal\views\ViewEntityInterface;
 use Drupal\views\ViewExecutable;
 
 /**
@@ -33,7 +34,7 @@ class Rearrange extends ViewsFormBase {
   /**
    * {@inheritdoc}
    */
-  public function getForm(ViewStorageInterface $view, $display_id, $js, $type = NULL) {
+  public function getForm(ViewEntityInterface $view, $display_id, $js, $type = NULL) {
     $this->setType($type);
     return parent::getForm($view, $display_id, $js);
   }
@@ -124,7 +125,7 @@ class Rearrange extends ViewsFormBase {
         '#id' => 'views-removed-' . $id,
         '#attributes' => array('class' => array('views-remove-checkbox')),
         '#default_value' => 0,
-        '#suffix' => _l('<span>' . $this->t('Remove') . '</span>', 'javascript:void()', array('attributes' => array('id' => 'views-remove-link-' . $id, 'class' => array('views-hidden', 'views-button-remove', 'views-remove-link'), 'alt' => $this->t('Remove this item'), 'title' => $this->t('Remove this item')), 'html' => TRUE)),
+        '#suffix' => \Drupal::l('<span>' . $this->t('Remove') . '</span>', Url::fromRoute('<none>', [], array('attributes' => array('id' => 'views-remove-link-' . $id, 'class' => array('views-hidden', 'views-button-remove', 'views-remove-link'), 'alt' => $this->t('Remove this item'), 'title' => $this->t('Remove this item')), 'html' => TRUE))),
       );
     }
 

@@ -7,16 +7,15 @@
 
 namespace Drupal\toolbar\Element;
 
-use Drupal\Component\Utility\Html;
 use Drupal\Core\Render\Element\RenderElement;
+use Drupal\Core\Url;
 
 /**
  * Provides a toolbar item that is wrapped in markup for common styling.
  *
  * The 'tray' property contains a renderable array.
  *
- * @todo Annotate once https://www.drupal.org/node/2326409 is in.
- *   RenderElement("toolbar_item")
+ * @RenderElement("toolbar_item")
  */
 class ToolbarItem extends RenderElement {
 
@@ -29,11 +28,10 @@ class ToolbarItem extends RenderElement {
       '#pre_render' => array(
         array($class, 'preRenderToolbarItem'),
       ),
-      '#theme' => 'toolbar_item',
       'tab' => array(
         '#type' => 'link',
         '#title' => NULL,
-        '#href' => '',
+        '#url' => Url::fromRoute('<front>'),
       ),
     );
   }
@@ -51,8 +49,7 @@ class ToolbarItem extends RenderElement {
    *   A renderable array.
    */
   public static function preRenderToolbarItem($element) {
-    // Assign each item a unique ID.
-    $id = Html::getUniqueId('toolbar-item');
+    $id = $element['#id'];
 
     // Provide attributes for a toolbar item.
     $attributes = array(

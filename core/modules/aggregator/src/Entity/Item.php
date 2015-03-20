@@ -31,9 +31,11 @@ use Drupal\Core\Url;
  *   uri_callback = "Drupal\aggregator\Entity\Item::buildUri",
  *   base_table = "aggregator_item",
  *   render_cache = FALSE,
+ *   list_cache_tags = { "aggregator_feed_list" },
  *   entity_keys = {
  *     "id" = "iid",
  *     "label" = "title",
+ *     "langcode" = "langcode",
  *   }
  * )
  */
@@ -145,7 +147,7 @@ class Item extends ContentEntityBase implements ItemInterface {
   /**
    * {@inheritdoc}
    */
-  public function  getLink() {
+  public function getLink() {
     return $this->get('link')->value;
   }
 
@@ -222,21 +224,14 @@ class Item extends ContentEntityBase implements ItemInterface {
     // handles the regular cases. The Item entity has one special case: a newly
     // created Item is *also* associated with a Feed, so we must invalidate the
     // associated Feed's cache tag.
-    Cache::invalidateTags($this->getCacheTag());
+    Cache::invalidateTags($this->getCacheTags());
   }
 
   /**
    * {@inheritdoc}
    */
-  public function getCacheTag() {
-    return Feed::load($this->getFeedId())->getCacheTag();
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function getListCacheTags() {
-    return Feed::load($this->getFeedId())->getListCacheTags();
+  public function getCacheTags() {
+    return Feed::load($this->getFeedId())->getCacheTags();
   }
 
 

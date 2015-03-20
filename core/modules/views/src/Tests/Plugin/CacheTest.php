@@ -23,7 +23,14 @@ class CacheTest extends PluginTestBase {
    *
    * @var array
    */
-  public static $testViews = array('test_view', 'test_cache');
+  public static $testViews = array('test_view', 'test_cache', 'test_groupwise_term_ui', 'test_display');
+
+  /**
+   * Modules to enable.
+   *
+   * @var array
+   */
+  public static $modules = array('taxonomy');
 
   protected function setUp() {
     parent::setUp();
@@ -140,39 +147,60 @@ class CacheTest extends PluginTestBase {
     $view->setDisplay();
     $output = $view->preview();
     drupal_render($output);
-    $css_path = drupal_get_path('module', 'views_test_data') . '/views_cache.test.css';
-    $js_path = drupal_get_path('module', 'views_test_data') . '/views_cache.test.js';
-    $this->assertTrue(in_array($css_path, $output['#attached']['css']), 'Make sure the css is added for cached views.');
-    $this->assertTrue(in_array($js_path, $output['#attached']['js']), 'Make sure the js is added for cached views.');
+    $this->assertTrue(in_array('views_test_data/test', $output['#attached']['library']), 'Make sure libraries are added for cached views.');
+    $this->assertEqual(['foo' => 'bar'], $output['#attached']['drupalSettings'], 'Make sure drupalSettings are added for cached views.');
+    $this->assertEqual(['views_test_data:1'], $output['#cache']['tags']);
+    $this->assertEqual(['views_test_data_post_render_cache' => [['foo' => 'bar']]], $output['#post_render_cache']);
     $this->assertFalse(!empty($view->build_info['pre_render_called']), 'Make sure hook_views_pre_render is not called for the cached view.');
+  }
 
-    // Now add some css/jss before running the view.
-    // Make sure that this css is not added when running the cached view.
-    $view->storage->set('id', 'test_cache_header_storage_2');
-    $attached = array(
-      '#attached' => array(
-        'css' => array(
-          drupal_get_path('module', 'system') . '/css/system.maintenance.css' => array(),
-        ),
-        'js' => array(
-          drupal_get_path('module', 'user') . '/user.permissions.js' => array(),
-        ),
-      ),
-    );
-    drupal_render($attached);
-    drupal_process_attached($attached);
-    $view->destroy();
+  /**
+   * Tests that Subqueries are cached as expected.
+   */
+  public function testSubqueryStringCache() {
+    // Execute the view.
+    $view = Views::getView('test_groupwise_term_ui');
+    $view->setDisplay();
+    $this->executeView($view);
+    // Request for the cache.
+    $cid = 'views_relationship_groupwise_max:test_groupwise_term_ui:default:tid_representative';
+    $cache = \Drupal::cache('data')->get($cid);
+    $this->assertEqual($cid, $cache->cid, 'Subquery String cached as expected.');
+  }
 
-    $output = $view->preview();
-    drupal_render($output);
-    $this->assertTrue(empty($output['#attached']['css']), 'The view does not have attached CSS.');
-    $this->assertTrue(empty($output['#attached']['js']), 'The view does not have attached JS.');
-    $view->destroy();
+  /**
+   * Tests the data contained in cached items.
+   */
+  public function testCacheData() {
+    for ($i = 1; $i <= 5; $i++) {
+      $this->drupalCreateNode();
+    }
 
-    $output = $view->preview();
-    drupal_render($output);
-    $this->assertTrue(empty($output['#attached']['css']), 'The cached view does not have attached CSS.');
-    $this->assertTrue(empty($output['#attached']['js']), 'The cached view does not have attached JS.');
+    $view = Views::getView('test_display');
+    $view->setDisplay();
+    $view->display_handler->overrideOption('cache', array(
+      'type' => 'time',
+      'options' => array(
+        'results_lifespan' => '3600',
+        'output_lifespan' => '3600'
+      )
+    ));
+    $this->executeView($view);
+
+    // Get the cache item.
+    $cid = $view->display_handler->getPlugin('cache')->generateResultsKey();
+    $cache = \Drupal::cache('data')->get($cid);
+
+    // Assert there are results, empty results would mean this test case would
+    // pass otherwise.
+    $this->assertTrue(count($cache->data['result']), 'Results saved in cached data.');
+
+    // Assert each row doesn't contain '_entity' or '_relationship_entities'
+    // items.
+    foreach ($cache->data['result'] as $row) {
+      $this->assertIdentical($row->_entity, NULL, 'Cached row "_entity" property is NULL');
+      $this->assertIdentical($row->_relationship_entities, [], 'Cached row "_relationship_entities" property is empty');
+    }
   }
 
 }

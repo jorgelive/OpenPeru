@@ -25,7 +25,6 @@ class NodeTest extends MigrateSqlSourceTestCase {
     'idlist' => array(),
     // The fake configuration for the source.
     'source' => array(
-      'bundle' => 'page',
       'plugin' => 'd6_node',
     ),
   );
@@ -110,33 +109,28 @@ class NodeTest extends MigrateSqlSourceTestCase {
    */
   protected function setUp() {
     foreach ($this->expectedResults as $k => $row) {
-      foreach (array('nid', 'vid', 'title', 'uid', 'body', 'teaser', 'log', 'timestamp', 'format') as $i => $field) {
+      foreach (array('nid', 'vid', 'title', 'uid', 'body', 'teaser', 'format', 'timestamp', 'log') as $field) {
         $this->databaseContents['node_revisions'][$k][$field] = $row[$field];
-        // Keep nid and vid.
-        if ($i > 1) {
-          unset($row[$field]);
+        switch ($field) {
+          case 'nid': case 'vid':
+            break;
+          case 'uid':
+            $this->databaseContents['node_revisions'][$k]['uid']++;
+            break;
+          default:
+            unset($row[$field]);
+            break;
         }
       }
       $this->databaseContents['node'][$k] = $row;
     }
+    array_walk($this->expectedResults, function (&$row) {
+      $row['node_uid'] = $row['uid'];
+      $row['revision_uid'] = $row['uid'] + 1;
+      unset($row['uid']);
+    });
 
     parent::setUp();
   }
 
-}
-
-namespace Drupal\Tests\migrate_drupal\Unit\source\d6;
-
-use Drupal\Core\Database\Connection;
-use Drupal\Core\Extension\ModuleHandlerInterface;
-use Drupal\migrate_drupal\Plugin\migrate\source\d6\Node;
-
-class TestNode extends Node {
-  protected $cckSchemaCorrect = true;
-  public function setDatabase(Connection $database) {
-    $this->database = $database;
-  }
-  public function setModuleHandler(ModuleHandlerInterface $module_handler) {
-    $this->moduleHandler = $module_handler;
-  }
 }

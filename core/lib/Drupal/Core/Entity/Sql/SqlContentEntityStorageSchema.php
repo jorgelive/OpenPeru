@@ -127,11 +127,30 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
    */
   public function requiresEntityStorageSchemaChanges(EntityTypeInterface $entity_type, EntityTypeInterface $original) {
     return
-      $entity_type->getStorageClass() != $original->getStorageClass() ||
       $entity_type->isRevisionable() != $original->isRevisionable() ||
       $entity_type->isTranslatable() != $original->isTranslatable() ||
+      $this->hasSharedTableNameChanges($entity_type, $original) ||
       // Detect changes in key or index definitions.
       $this->getEntitySchemaData($entity_type, $this->getEntitySchema($entity_type, TRUE)) != $this->loadEntitySchemaData($original);
+  }
+
+  /**
+   * Detects whether any table name got renamed in an entity type update.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeInterface $entity_type
+   *   The new entity type.
+   * @param \Drupal\Core\Entity\EntityTypeInterface $original
+   *   The origin entity type.
+   *
+   * @return bool
+   *   Returns TRUE if there have been changes.
+   */
+  protected function hasSharedTableNameChanges(EntityTypeInterface $entity_type, EntityTypeInterface $original) {
+    return
+      $entity_type->getBaseTable() != $original->getBaseTable() ||
+      $entity_type->getDataTable() != $original->getDataTable() ||
+      $entity_type->getRevisionTable() != $original->getRevisionTable() ||
+      $entity_type->getRevisionDataTable() != $original->getRevisionDataTable();
   }
 
   /**
@@ -178,23 +197,15 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
    * {@inheritdoc}
    */
   public function requiresEntityDataMigration(EntityTypeInterface $entity_type, EntityTypeInterface $original) {
-    // If we're updating from NULL storage, then there's no stored data that
-    // requires migration.
-    // @todo Remove in https://www.drupal.org/node/2335879.
+    // If the original storage has existing entities, or it is impossible to
+    // determine if that is the case, require entity data to be migrated.
     $original_storage_class = $original->getStorageClass();
-    $null_storage_class = 'Drupal\Core\Entity\ContentEntityNullStorage';
-    if ($original_storage_class == $null_storage_class || is_subclass_of($original_storage_class, $null_storage_class)) {
-      return FALSE;
+    if (!class_exists($original_storage_class)) {
+      return TRUE;
     }
-
-    return
-      // If the original storage class is different, then there might be
-      // existing entities in that storage even if the new storage's base
-      // table is empty.
-      // @todo Ask the old storage handler rather than assuming:
-      //   https://www.drupal.org/node/2335879.
-      $entity_type->getStorageClass() != $original_storage_class ||
-      !$this->isTableEmpty($this->storage->getBaseTable());
+    // Use the original entity type since the storage has not been updated.
+    $original_storage = $this->entityManager->createHandlerInstance($original_storage_class, $original);
+    return $original_storage->hasData();
   }
 
   /**
@@ -887,9 +898,7 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
 
     $schema = array(
       'description' => "The data table for $entity_type_id entities.",
-      // @todo Use the language entity key when https://drupal.org/node/2143729
-      //   is in.
-      'primary key' => array($id_key, 'langcode'),
+      'primary key' => array($id_key, $entity_type->getKey('langcode')),
       'indexes' => array(),
       'foreign keys' => array(
         $entity_type_id => array(
@@ -925,9 +934,7 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
 
     $schema = array(
       'description' => "The revision data table for $entity_type_id entities.",
-      // @todo Use the language entity key when https://drupal.org/node/2143729
-      //   is in.
-      'primary key' => array($revision_key, 'langcode'),
+      'primary key' => array($revision_key, $entity_type->getKey('langcode')),
       'indexes' => array(),
       'foreign keys' => array(
         $entity_type_id => array(
@@ -1031,6 +1038,7 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
     if ($schema['fields'][$key]['type'] == 'int') {
       $schema['fields'][$key]['type'] = 'serial';
     }
+    $schema['fields'][$key]['not null'] = TRUE;
     unset($schema['fields'][$key]['default']);
   }
 
@@ -1067,7 +1075,11 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
   protected function createDedicatedTableSchema(FieldStorageDefinitionInterface $storage_definition) {
     $schema = $this->getDedicatedTableSchema($storage_definition);
     foreach ($schema as $name => $table) {
-      $this->database->schema()->createTable($name, $table);
+      // Check if the table exists because it might already have been
+      // created as part of the earlier entity type update event.
+      if (!$this->database->schema()->tableExists($name)) {
+        $this->database->schema()->createTable($name, $table);
+      }
     }
     $this->saveFieldSchemaData($storage_definition, $schema);
   }
@@ -1100,11 +1112,19 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
           $schema[$table_name] = $this->getSharedTableFieldSchema($storage_definition, $table_name, $column_names);
           if (!$only_save) {
             foreach ($schema[$table_name]['fields'] as $name => $specifier) {
-              $schema_handler->addField($table_name, $name, $specifier);
+              // Check if the field exists because it might already have been
+              // created as part of the earlier entity type update event.
+              if (!$schema_handler->fieldExists($table_name, $name)) {
+                $schema_handler->addField($table_name, $name, $specifier);
+              }
             }
             if (!empty($schema[$table_name]['indexes'])) {
               foreach ($schema[$table_name]['indexes'] as $name => $specifier) {
-                $schema_handler->addIndex($table_name, $name, $specifier);
+                // Check if the index exists because it might already have been
+                // created as part of the earlier entity type update event.
+                if (!$schema_handler->indexExists($table_name, $name)) {
+                  $schema_handler->addIndex($table_name, $name, $specifier);
+                }
               }
             }
             if (!empty($schema[$table_name]['unique keys'])) {
@@ -1397,28 +1417,35 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
     }
 
     $field_name = $storage_definition->getName();
-    $field_description = $storage_definition->getDescription();
+    $base_table = $this->storage->getBaseTable();
+
+    // A shared table contains rows for entities where the field is empty
+    // (since other fields stored in the same table might not be empty), thus
+    // the only columns that can be 'not null' are those for required
+    // properties of required fields. However, even those would break in the
+    // case where a new field is added to a table that contains existing rows.
+    // For now, we only hardcode 'not null' to a couple "entity keys", in order
+    // to keep their indexes optimized.
+    // @todo Revisit once we have support for 'initial' in
+    //   https://www.drupal.org/node/2346019.
+    $not_null_keys = $this->entityType->getKeys();
+    // Label fields are not necessarily required.
+    unset($not_null_keys['label']);
+    // Because entity ID and revision ID are both serial fields in the base and
+    // revision table respectively, the revision ID is not known yet, when
+    // inserting data into the base table. Instead the revision ID in the base
+    // table is updated after the data has been inserted into the revision
+    // table. For this reason the revision ID field cannot be marked as NOT
+    // NULL.
+    if ($table_name == $base_table) {
+      unset($not_null_keys['revision']);
+    }
 
     foreach ($column_mapping as $field_column_name => $schema_field_name) {
       $column_schema = $field_schema['columns'][$field_column_name];
 
       $schema['fields'][$schema_field_name] = $column_schema;
-      $schema['fields'][$schema_field_name]['description'] = $field_description;
-      // Only entity keys are required.
-      $keys = $this->entityType->getKeys() + array('langcode' => 'langcode');
-      // The label is an entity key, but label fields are not necessarily
-      // required.
-      // Because entity ID and revision ID are both serial fields in the base
-      // and revision table respectively, the revision ID is not known yet, when
-      // inserting data into the base table. Instead the revision ID in the base
-      // table is updated after the data has been inserted into the revision
-      // table. For this reason the revision ID field cannot be marked as NOT
-      // NULL.
-      unset($keys['label'], $keys['revision']);
-      // Key fields may not be NULL.
-      if (in_array($field_name, $keys)) {
-        $schema['fields'][$schema_field_name]['not null'] = TRUE;
-      }
+      $schema['fields'][$schema_field_name]['not null'] = in_array($field_name, $not_null_keys);
     }
 
     if (!empty($field_schema['indexes'])) {
@@ -1608,6 +1635,7 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
 
     // Check that the schema does not include forbidden column names.
     $schema = $storage_definition->getSchema();
+    $properties = $storage_definition->getPropertyDefinitions();
     $table_mapping = $this->storage->getTableMapping();
     if (array_intersect(array_keys($schema['columns']), $table_mapping->getReservedColumns())) {
       throw new FieldException(format_string('Illegal field column names on @field_name', array('@field_name' => $storage_definition->getName())));
@@ -1617,6 +1645,10 @@ class SqlContentEntityStorageSchema implements DynamicallyFieldableEntityStorage
     foreach ($schema['columns'] as $column_name => $attributes) {
       $real_name = $table_mapping->getFieldColumnName($storage_definition, $column_name);
       $data_schema['fields'][$real_name] = $attributes;
+      // A dedicated table only contain rows for actual field values, and no
+      // rows for entities where the field is empty. Thus, we can safely
+      // enforce 'not null' on the columns for the field's required properties.
+      $data_schema['fields'][$real_name]['not null'] = $properties[$column_name]->isRequired();
     }
 
     // Add indexes.

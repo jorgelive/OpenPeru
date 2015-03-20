@@ -9,14 +9,14 @@ namespace Drupal\migrate_drupal\Tests\d6;
 
 use Drupal\config\Tests\SchemaCheckTestTrait;
 use Drupal\migrate\MigrateExecutable;
-use Drupal\migrate_drupal\Tests\MigrateDrupalTestBase;
+use Drupal\migrate_drupal\Tests\d6\MigrateDrupal6TestBase;
 
 /**
  * Upgrade variables to text.settings.yml.
  *
  * @group migrate_drupal
  */
-class MigrateTextConfigsTest extends MigrateDrupalTestBase {
+class MigrateTextConfigsTest extends MigrateDrupal6TestBase {
 
   use SchemaCheckTestTrait;
 
@@ -34,7 +34,7 @@ class MigrateTextConfigsTest extends MigrateDrupalTestBase {
     parent::setUp();
     $migration = entity_load('migration', 'd6_text_settings');
     $dumps = array(
-      $this->getDumpDirectory() . '/Drupal6TextSettings.php',
+      $this->getDumpDirectory() . '/Variable.php',
     );
     $this->prepare($migration, $dumps);
     $executable = new MigrateExecutable($migration, $this);
@@ -45,7 +45,7 @@ class MigrateTextConfigsTest extends MigrateDrupalTestBase {
    * Tests migration of text variables to text.settings.yml.
    */
   public function testTextSettings() {
-    $config = \Drupal::config('text.settings');
+    $config = $this->config('text.settings');
     $this->assertIdentical($config->get('default_summary_length'), 456);
     $this->assertConfigSchema(\Drupal::service('config.typed'), 'text.settings', $config->get());
   }

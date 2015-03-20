@@ -7,8 +7,10 @@
 
 namespace Drupal\views\Plugin\views\filter;
 
+use Drupal\Core\Form\FormHelper;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Render\Element;
+use Drupal\views\Plugin\CacheablePluginInterface;
 use Drupal\views\Plugin\views\HandlerBase;
 use Drupal\Component\Utility\String as UtilityString;
 use Drupal\views\Plugin\views\display\DisplayPluginBase;
@@ -43,7 +45,7 @@ use Drupal\views\ViewExecutable;
 /**
  * Base class for Views filters handler plugins.
  */
-abstract class FilterPluginBase extends HandlerBase {
+abstract class FilterPluginBase extends HandlerBase implements CacheablePluginInterface {
 
   /**
    * Contains the actual value of the field,either configured in the views ui
@@ -119,18 +121,18 @@ abstract class FilterPluginBase extends HandlerBase {
     $options['operator'] = array('default' => '=');
     $options['value'] = array('default' => '');
     $options['group'] = array('default' => '1');
-    $options['exposed'] = array('default' => FALSE, 'bool' => TRUE);
+    $options['exposed'] = array('default' => FALSE);
     $options['expose'] = array(
       'contains' => array(
         'operator_id' => array('default' => FALSE),
-        'label' => array('default' => '', 'translatable' => TRUE),
-        'description' => array('default' => '', 'translatable' => TRUE),
-        'use_operator' => array('default' => FALSE, 'bool' => TRUE),
+        'label' => array('default' => ''),
+        'description' => array('default' => ''),
+        'use_operator' => array('default' => FALSE),
         'operator' => array('default' => ''),
         'identifier' => array('default' => ''),
-        'required' => array('default' => FALSE, 'bool' => TRUE),
-        'remember' => array('default' => FALSE, 'bool' => TRUE),
-        'multiple' => array('default' => FALSE, 'bool' => TRUE),
+        'required' => array('default' => FALSE),
+        'remember' => array('default' => FALSE),
+        'multiple' => array('default' => FALSE),
         'remember_roles' => array('default' => array(
           DRUPAL_AUTHENTICATED_RID => DRUPAL_AUTHENTICATED_RID,
         )),
@@ -145,15 +147,15 @@ abstract class FilterPluginBase extends HandlerBase {
     // an identifier and other settings like the widget and the label.
     // This settings are saved in another array to allow users to switch
     // between a normal filter and a group of filters with a single click.
-    $options['is_grouped'] = array('default' => FALSE, 'bool' => TRUE);
+    $options['is_grouped'] = array('default' => FALSE);
     $options['group_info'] = array(
       'contains' => array(
-        'label' => array('default' => '', 'translatable' => TRUE),
-        'description' => array('default' => '', 'translatable' => TRUE),
+        'label' => array('default' => ''),
+        'description' => array('default' => ''),
         'identifier' => array('default' => ''),
-        'optional' => array('default' => TRUE, 'bool' => TRUE),
+        'optional' => array('default' => TRUE),
         'widget' => array('default' => 'select'),
-        'multiple' => array('default' => FALSE, 'bool' => TRUE),
+        'multiple' => array('default' => FALSE),
         'remember' => array('default' => 0),
         'default_group' => array('default' => 'All'),
         'default_group_multiple' => array('default' => array()),
@@ -978,39 +980,30 @@ abstract class FilterPluginBase extends HandlerBase {
       $row['operator']['#title'] = '';
       $this->valueForm($row, $form_state);
 
-      // Fix the dependencies to update value forms when operators
-      // changes. This is needed because forms are inside a new form and
-      // their ids changes. Dependencies are used when operator changes
-      // from to 'Between', 'Not Between', etc, and two or more widgets
-      // are displayed.
-      $without_children = TRUE;
-      foreach (Element::children($row['value']) as $children) {
-        $has_state = FALSE;
-        $states = array();
-        foreach ($row['value'][$children]['#states']['visible'] as $key => $state) {
-          if (isset($state[':input[name="options[operator]"]'])) {
-            $has_state = TRUE;
-            $states[$key] = $state[':input[name="options[operator]"]']['value'];
+      // Fix the dependencies to update value forms when operators changes. This
+      // is needed because forms are inside a new form and their IDs changes.
+      // Dependencies are used when operator changes from to 'Between',
+      // 'Not Between', etc, and two or more widgets are displayed.
+      FormHelper::rewriteStatesSelector($row['value'], ':input[name="options[operator]"]', ':input[name="options[group_info][group_items][' . $item_id . '][operator]"]');
+
+      // Set default values.
+      $children = Element::children($row['value']);
+      if (!empty($children)) {
+        foreach ($children as $child) {
+          foreach ($row['value'][$child]['#states']['visible'] as $state) {
+            if (isset($state[':input[name="options[group_info][group_items][' . $item_id . '][operator]"]'])) {
+              $row['value'][$child]['#title'] = '';
+
+              if (!empty($this->options['group_info']['group_items'][$item_id]['value'][$child])) {
+                $row['value'][$child]['#default_value'] = $this->options['group_info']['group_items'][$item_id]['value'][$child];
+              }
+              // Exit this loop and process the next child element.
+              break;
+            }
           }
         }
-        if ($has_state) {
-          foreach ($states as $key => $state) {
-            $row['value'][$children]['#states']['visible'][] = array(
-              ':input[name="options[group_info][group_items][' . $item_id . '][operator]"]' => array('value' => $state),
-            );
-            unset($row['value'][$children]['#states']['visible'][$key]);
-          }
-
-          $row['value'][$children]['#title'] = '';
-
-          if (!empty($this->options['group_info']['group_items'][$item_id]['value'][$children])) {
-            $row['value'][$children]['#default_value'] = $this->options['group_info']['group_items'][$item_id]['value'][$children];
-          }
-        }
-        $without_children = FALSE;
       }
-
-      if ($without_children) {
+      else {
         if (isset($this->options['group_info']['group_items'][$item_id]['value']) && $this->options['group_info']['group_items'][$item_id]['value'] != '') {
           $row['value']['#default_value'] = $this->options['group_info']['group_items'][$item_id]['value'];
         }
@@ -1186,7 +1179,7 @@ abstract class FilterPluginBase extends HandlerBase {
       else {
         // Cast the label to a string since it can be an object.
         // @see \Drupal\Core\StringTranslation\TranslationWrapper
-        $options[$value] = strip_tags(decode_entities((string) $label));
+        $options[$value] = strip_tags(UtilityString::decodeEntities((string) $label));
       }
     }
   }
@@ -1364,7 +1357,7 @@ abstract class FilterPluginBase extends HandlerBase {
       }
       if (isset($value)) {
         $this->value = $value;
-        if (empty($this->alwaysMultiple) && empty($this->options['expose']['multiple'])) {
+        if (empty($this->alwaysMultiple) && empty($this->options['expose']['multiple']) && !is_array($value)) {
           $this->value = array($value);
         }
       }
@@ -1465,6 +1458,27 @@ abstract class FilterPluginBase extends HandlerBase {
    */
   protected static function arrayFilterZero($var) {
     return trim($var) != '';
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function isCacheable() {
+    return TRUE;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheContexts() {
+    $cache_contexts = [];
+    // An exposed filter allows the user to change a view's filters. They accept
+    // input from GET parameters, which are part of the URL. Hence a view with
+    // an exposed filter is cacheable per URL.
+    if ($this->isExposed()) {
+      $cache_contexts[] = 'cache.context.url';
+    }
+    return $cache_contexts;
   }
 
 }

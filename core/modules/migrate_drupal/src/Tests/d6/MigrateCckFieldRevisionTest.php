@@ -64,11 +64,6 @@ class MigrateCckFieldRevisionTest extends MigrateNodeTestBase {
       ),
     );
     $this->prepareMigrations($id_mappings);
-    $dumps = array(
-      $this->getDumpDirectory() . '/Drupal6NodeRevision.php',
-    );
-    $this->loadDumps($dumps);
-
     $migrations = entity_load_multiple('migration', array('d6_cck_field_revision:*'));
     foreach ($migrations as $migration) {
       $executable = new MigrateExecutable($migration, $this);
@@ -81,8 +76,8 @@ class MigrateCckFieldRevisionTest extends MigrateNodeTestBase {
    */
   public function testCckFieldRevision() {
     $node = \Drupal::entityManager()->getStorage('node')->loadRevision(2);
-    $this->assertEqual($node->id(), 1, 'Node 1 loaded.');
-    $this->assertEqual($node->getRevisionId(), 2, 'Node 1 revision 2loaded.');
+    $this->assertIdentical($node->id(), '1', 'Node 1 loaded.');
+    $this->assertIdentical($node->getRevisionId(), '2', 'Node 1 revision 2loaded.');
   }
 
 }

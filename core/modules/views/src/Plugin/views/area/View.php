@@ -72,7 +72,7 @@ class View extends AreaPluginBase {
     $options = parent::defineOptions();
 
     $options['view_to_insert'] = array('default' => '');
-    $options['inherit_arguments'] = array('default' => FALSE, 'bool' => TRUE);
+    $options['inherit_arguments'] = array('default' => FALSE);
     return $options;
   }
 
@@ -149,6 +149,21 @@ class View extends AreaPluginBase {
     else {
       return parent::isEmpty();
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function calculateDependencies() {
+    $dependencies = parent::calculateDependencies();
+
+    list($view_id) = explode(':', $this->options['view_to_insert'], 2);
+    if ($view_id) {
+      $view = $this->viewStorage->load($view_id);
+      $dependencies[$view->getConfigDependencyKey()][] = $view->getConfigDependencyName();
+    }
+
+    return $dependencies;
   }
 
 }

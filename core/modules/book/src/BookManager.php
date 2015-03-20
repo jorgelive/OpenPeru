@@ -243,9 +243,14 @@ class BookManager implements BookManagerInterface {
       return FALSE;
     }
 
-    if (!empty($node->book['bid']) && $node->book['bid'] == 'new') {
-      // New nodes that are their own book.
-      $node->book['bid'] = $node->id();
+    if (!empty($node->book['bid'])) {
+      if ($node->book['bid'] == 'new') {
+        // New nodes that are their own book.
+        $node->book['bid'] = $node->id();
+      }
+      elseif (!isset($node->book['original_bid'])) {
+        $node->book['original_bid'] = $node->book['bid'];
+      }
     }
 
     // Ensure we create a new book link if either the node itself is new, or the
@@ -428,7 +433,7 @@ class BookManager implements BookManagerInterface {
     }
     $this->updateOriginalParent($original);
     $this->books = NULL;
-    \Drupal::cache('data')->deleteTags(array('bid:' . $original['bid']));
+    Cache::invalidateTags(array('bid:' . $original['bid']));
   }
 
   /**
@@ -443,7 +448,7 @@ class BookManager implements BookManagerInterface {
     $nid = isset($link['nid']) ? $link['nid'] : 0;
     // Generate a cache ID (cid) specific for this $bid, $link, $language, and
     // depth.
-    $cid = 'book-links:' . $bid . ':all:' . $nid . ':' . $language_interface->id . ':' . (int) $max_depth;
+    $cid = 'book-links:' . $bid . ':all:' . $nid . ':' . $language_interface->getId() . ':' . (int) $max_depth;
 
     if (!isset($tree[$cid])) {
       // If the tree data was not in the static cache, build $tree_parameters.
@@ -498,29 +503,21 @@ class BookManager implements BookManagerInterface {
 
     $num_items = count($items);
     foreach ($items as $i => $data) {
-      $class = array();
-      if ($i == 0) {
-        $class[] = 'first';
-      }
-      if ($i == $num_items - 1) {
-        $class[] = 'last';
-      }
+      $class = ['menu-item'];
       // Set a class for the <li>-tag. Since $data['below'] may contain local
       // tasks, only set 'expanded' class if the link also has children within
       // the current book.
       if ($data['link']['has_children'] && $data['below']) {
-        $class[] = 'expanded';
+        $class[] = 'menu-item--expanded';
       }
       elseif ($data['link']['has_children']) {
-        $class[] = 'collapsed';
+        $class[] = 'menu-item--collapsed';
       }
-      else {
-        $class[] = 'leaf';
-      }
+
       // Set a class if the link is in the active trail.
       if ($data['link']['in_active_trail']) {
-        $class[] = 'active-trail';
-        $data['link']['localized_options']['attributes']['class'][] = 'active-trail';
+        $class[] = 'menu-item--active-trail';
+        $data['link']['localized_options']['attributes']['class'][] = 'menu-item--active-trail';
       }
 
       // Allow book-specific theme overrides.
@@ -596,7 +593,7 @@ class BookManager implements BookManagerInterface {
     if (isset($parameters['expanded'])) {
       sort($parameters['expanded']);
     }
-    $tree_cid = 'book-links:' . $bid . ':tree-data:' . $language_interface->id . ':' . hash('sha256', serialize($parameters));
+    $tree_cid = 'book-links:' . $bid . ':tree-data:' . $language_interface->getId() . ':' . hash('sha256', serialize($parameters));
 
     // If we do not have this tree in the static cache, check {cache_data}.
     if (!isset($trees[$tree_cid])) {
@@ -690,7 +687,7 @@ class BookManager implements BookManagerInterface {
    * {@inheritdoc}
    */
   public function loadBookLinks($nids, $translate = TRUE) {
-    $result = $this->bookOutlineStorage->loadMultiple($nids);
+    $result = $this->bookOutlineStorage->loadMultiple($nids, $translate);
     $links = array();
     foreach ($result as $link) {
       if ($translate) {
@@ -758,7 +755,7 @@ class BookManager implements BookManagerInterface {
     foreach ($affected_bids as $bid) {
       $cache_tags[] = 'bid:' . $bid;
     }
-    \Drupal::cache('data')->deleteTags($cache_tags);
+    Cache::invalidateTags($cache_tags);
     return $link;
   }
 
@@ -881,7 +878,7 @@ class BookManager implements BookManagerInterface {
       // @todo This should be actually filtering on the desired node status field
       //   language and just fall back to the default language.
       $nids = \Drupal::entityQuery('node')
-        ->condition('nid', $nids)
+        ->condition('nid', $nids, 'IN')
         ->condition('status', 1)
         ->execute();
 

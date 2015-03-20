@@ -11,6 +11,7 @@ use Drupal\Core\Form\FormBase;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Render\Element;
+use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
  * Base class for entity forms.
@@ -37,6 +38,13 @@ class EntityForm extends FormBase implements EntityFormInterface {
   protected $moduleHandler;
 
   /**
+   * The entity manager.
+   *
+   * @var \Drupal\Core\Entity\EntityManagerInterface
+   */
+  protected $entityManager;
+
+  /**
    * The entity being used by this form.
    *
    * @var \Drupal\Core\Entity\EntityInterface
@@ -57,7 +65,7 @@ class EntityForm extends FormBase implements EntityFormInterface {
   /**
    * {@inheritdoc}
    */
-  public function getBaseFormID() {
+  public function getBaseFormId() {
     // Assign ENTITYTYPE_form as base form ID to invoke corresponding
     // hook_form_alter(), #validate, #submit, and #theme callbacks, but only if
     // it is different from the actual form ID, since callbacks would be invoked
@@ -131,15 +139,6 @@ class EntityForm extends FormBase implements EntityFormInterface {
     // Add a process callback.
     $form['#process'][] = '::processForm';
 
-    if (!isset($form['langcode'])) {
-      // If the form did not specify otherwise, default to keeping the existing
-      // language of the entity or defaulting to the site default language for
-      // new entities.
-      $form['langcode'] = array(
-        '#type' => 'value',
-        '#value' => !$entity->isNew() ? $entity->language()->id : language_default()->id,
-      );
-    }
     return $form;
   }
 
@@ -222,7 +221,7 @@ class EntityForm extends FormBase implements EntityFormInterface {
           'class' => array('button', 'button--danger'),
         ),
       );
-      $actions['delete'] += $route_info->toRenderArray();
+      $actions['delete']['#url'] = $route_info;
     }
 
     return $actions;
@@ -232,11 +231,10 @@ class EntityForm extends FormBase implements EntityFormInterface {
    * {@inheritdoc}
    */
   public function validate(array $form, FormStateInterface $form_state) {
-    $this->updateFormLangcode($form_state);
     // @todo Remove this.
     // Execute legacy global validation handlers.
     $form_state->setValidateHandlers([]);
-    form_execute_handlers('validate', $form, $form_state);
+    \Drupal::service('form_validator')->executeValidateHandlers($form, $form_state);
   }
 
   /**
@@ -272,34 +270,6 @@ class EntityForm extends FormBase implements EntityFormInterface {
   /**
    * {@inheritdoc}
    */
-  public function getFormLangcode(FormStateInterface $form_state) {
-    return $this->entity->language()->id;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function isDefaultFormLangcode(FormStateInterface $form_state) {
-    // The entity is not translatable, this is always the default language.
-    return TRUE;
-  }
-
-  /**
-   * Updates the form language to reflect any change to the entity language.
-   *
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The current state of the form.
-   */
-  protected function updateFormLangcode(FormStateInterface $form_state) {
-    // Update the form language as it might have changed.
-    if ($form_state->hasValue('langcode') && $this->isDefaultFormLangcode($form_state)) {
-      $form_state->set('langcode', $form_state->getValue('langcode'));
-    }
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function buildEntity(array $form, FormStateInterface $form_state) {
     $entity = clone $this->entity;
     $this->copyFormValuesToEntity($entity, $form, $form_state);
@@ -329,10 +299,17 @@ class EntityForm extends FormBase implements EntityFormInterface {
    *   The current state of the form.
    */
   protected function copyFormValuesToEntity(EntityInterface $entity, array $form, FormStateInterface $form_state) {
+    $values = $form_state->getValues();
+
+    if ($this->entity instanceof EntityWithPluginCollectionInterface) {
+      // Do not manually update values represented by plugin collections.
+      $values = array_diff_key($values, $this->entity->getPluginCollections());
+    }
+
     // @todo: This relies on a method that only exists for config and content
     //   entities, in a different way. Consider moving this logic to a config
     //   entity specific implementation.
-    foreach ($form_state->getValues() as $key => $value) {
+    foreach ($values as $key => $value) {
       $entity->set($key, $value);
     }
   }
@@ -350,6 +327,20 @@ class EntityForm extends FormBase implements EntityFormInterface {
   public function setEntity(EntityInterface $entity) {
     $this->entity = $entity;
     return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getEntityFromRouteMatch(RouteMatchInterface $route_match, $entity_type_id) {
+    if ($route_match->getRawParameter($entity_type_id) !== NULL) {
+      $entity = $route_match->getParameter($entity_type_id);
+    }
+    else {
+      $entity = $this->entityManager->getStorage($entity_type_id)->create([]);
+    }
+
+    return $entity;
   }
 
   /**
@@ -390,6 +381,14 @@ class EntityForm extends FormBase implements EntityFormInterface {
    */
   public function setModuleHandler(ModuleHandlerInterface $module_handler) {
     $this->moduleHandler = $module_handler;
+    return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setEntityManager(EntityManagerInterface $entity_manager) {
+    $this->entityManager = $entity_manager;
     return $this;
   }
 

@@ -13,6 +13,7 @@ use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Updater\Updater;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Configure update settings for this site.
@@ -27,12 +28,22 @@ class UpdateManagerInstall extends FormBase {
   protected $moduleHandler;
 
   /**
+   * The root location under which installed projects will be saved.
+   *
+   * @var string
+   */
+  protected $root;
+
+  /**
    * Constructs a new UpdateManagerInstall.
    *
+   * @param string $root
+   *   The root location under which installed projects will be saved.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler.
    */
-  public function __construct(ModuleHandlerInterface $module_handler) {
+  public function __construct($root, ModuleHandlerInterface $module_handler) {
+    $this->root = $root;
     $this->moduleHandler = $module_handler;
   }
 
@@ -48,6 +59,7 @@ class UpdateManagerInstall extends FormBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
+      $container->get('update.root'),
       $container->get('module_handler')
     );
   }
@@ -169,7 +181,7 @@ class UpdateManagerInstall extends FormBase {
 
     $project_location = $directory . '/' . $project;
     try {
-      $updater = Updater::factory($project_location);
+      $updater = Updater::factory($project_location, $this->root);
     }
     catch (\Exception $e) {
       drupal_set_message($e->getMessage(), 'error');
@@ -207,8 +219,11 @@ class UpdateManagerInstall extends FormBase {
     // update_authorize_run_install() directly.
     if (fileowner($project_real_location) == fileowner(conf_path())) {
       $this->moduleHandler->loadInclude('update', 'inc', 'update.authorize');
-      $filetransfer = new Local(DRUPAL_ROOT);
-      call_user_func_array('update_authorize_run_install', array_merge(array($filetransfer), $arguments));
+      $filetransfer = new Local($this->root);
+      $response = call_user_func_array('update_authorize_run_install', array_merge(array($filetransfer), $arguments));
+      if ($response instanceof Response) {
+        $form_state->setResponse($response);
+      }
     }
 
     // Otherwise, go through the regular workflow to prompt for FTP/SSH

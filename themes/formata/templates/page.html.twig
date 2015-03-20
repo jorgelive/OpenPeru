@@ -8,11 +8,13 @@
         {{ page.header }}
     {% endif %}
 </div>
-    <div id="pre-content">
-        {% if page.precontent %}
-            {{ page.precontent }}
-        {% endif %}
-    </div>
+<div id="pre-content">
+    {% if page.precontent %}
+        {{ page.precontent }}
+    {% endif %}
+</div>
+
+
     <div id="main-content">
         {% if messages %}
             <div id="messages">
@@ -43,8 +45,17 @@
             {{ page.content }}
         </main>
     </div>
+
+
+
+<div id="post-content">
+    {% if page.postcontent %}
+        {{ page.postcontent }}
+    {% endif %}
 </div>
-<footer  id="footer">
+
+
+<footer id="footer">
     {% if page.footer %}
         {{ page.footer }}
     {% endif %}

@@ -40,11 +40,11 @@ class TextWithSummaryItem extends TextItemBase {
     $properties = parent::propertyDefinitions($field_definition);
 
     $properties['summary'] = DataDefinition::create('string')
-      ->setLabel(t('Summary text value'));
+      ->setLabel(t('Summary'));
 
     $properties['summary_processed'] = DataDefinition::create('string')
-      ->setLabel(t('Processed summary text'))
-      ->setDescription(t('The summary text value with the text format applied.'))
+      ->setLabel(t('Processed summary'))
+      ->setDescription(t('The summary text with the text format applied.'))
       ->setComputed(TRUE)
       ->setClass('\Drupal\text\TextProcessed')
       ->setSetting('text source', 'summary');
@@ -61,17 +61,14 @@ class TextWithSummaryItem extends TextItemBase {
         'value' => array(
           'type' => 'text',
           'size' => 'big',
-          'not null' => FALSE,
         ),
         'summary' => array(
           'type' => 'text',
           'size' => 'big',
-          'not null' => FALSE,
         ),
         'format' => array(
           'type' => 'varchar',
           'length' => 255,
-          'not null' => FALSE,
         ),
       ),
       'indexes' => array(

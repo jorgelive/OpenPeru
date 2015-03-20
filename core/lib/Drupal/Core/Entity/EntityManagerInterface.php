@@ -36,7 +36,7 @@ interface EntityManagerInterface extends PluginManagerInterface, EntityTypeListe
    *
    * @param string $entity_type_id
    *   The entity type ID. Only entity types that implement
-   *   \Drupal\Core\Entity\ContentEntityInterface are supported.
+   *   \Drupal\Core\Entity\FieldableEntityInterface are supported.
    *
    * @return \Drupal\Core\Field\FieldDefinitionInterface[]
    *   The array of base field definitions for the entity type, keyed by field
@@ -52,7 +52,7 @@ interface EntityManagerInterface extends PluginManagerInterface, EntityTypeListe
    *
    * @param string $entity_type_id
    *   The entity type ID. Only entity types that implement
-   *   \Drupal\Core\Entity\ContentEntityInterface are supported.
+   *   \Drupal\Core\Entity\FieldableEntityInterface are supported.
    * @param string $bundle
    *   The bundle.
    *
@@ -224,6 +224,16 @@ interface EntityManagerInterface extends PluginManagerInterface, EntityTypeListe
   public function getFormObject($entity_type, $operation);
 
   /**
+   * Gets all route provider instances.
+   *
+   * @param string $entity_type
+   *   The entity type for this route providers.
+   *
+   * @return \Drupal\Core\Entity\Routing\EntityRouteProviderInterface[]
+   */
+  public function getRouteProviders($entity_type);
+
+  /**
    * Checks whether a certain entity type has a certain handler.
    *
    * @param string $entity_type
@@ -237,19 +247,36 @@ interface EntityManagerInterface extends PluginManagerInterface, EntityTypeListe
   public function hasHandler($entity_type, $handler_type);
 
   /**
-   * Creates a new handler instance.
+   * Creates a new handler instance for a entity type and handler type.
    *
    * @param string $entity_type
    *   The entity type for this controller.
    * @param string $handler_type
    *   The controller type to create an instance for.
    *
-   * @return mixed
+   * @return object
    *   A handler instance.
    *
    * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
    */
   public function getHandler($entity_type, $handler_type);
+
+  /**
+   * Creates new handler instance.
+   *
+   * Usually \Drupal\Core\Entity\EntityManagerInterface::getHandler() is
+   * preferred since that method has additional checking that the class exists
+   * and has static caches.
+   *
+   * @param mixed $class
+   *   The handler class to instantiate.
+   * @param \Drupal\Core\Entity\EntityTypeInterface $definition
+   *   The entity type definition.
+   *
+   * @return object
+   *   A handler instance.
+   */
+  public function createHandlerInstance($class, EntityTypeInterface $definition = null);
 
   /**
    * Get the bundle info of an entity type.
@@ -434,13 +461,34 @@ interface EntityManagerInterface extends PluginManagerInterface, EntityTypeListe
    * @param string $uuid
    *   The UUID of the entity to load.
    *
-   * @return \Drupal\Core\Entity\EntityInterface|FALSE
-   *   The entity object, or FALSE if there is no entity with the given UUID.
+   * @return \Drupal\Core\Entity\EntityInterface|null
+   *   The entity object, or NULL if there is no entity with the given UUID.
    *
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   Thrown in case the requested entity type does not support UUIDs.
    */
   public function loadEntityByUuid($entity_type_id, $uuid);
+
+  /**
+   * Loads an entity by the config target identifier.
+   *
+   * @param string $entity_type_id
+   *   The entity type ID to load from.
+   * @param string $target
+   *   The configuration target to load, as returned from
+   *   \Drupal\Core\Entity\EntityInterface::getConfigTarget().
+   *
+   * @return \Drupal\Core\Entity\EntityInterface|null
+   *   The entity object, or NULL if there is no entity with the given config
+   *   target identifier.
+   *
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   *   Thrown if the target identifier is a UUID but the entity type does not
+   *   support UUIDs.
+   *
+   * @see \Drupal\Core\Entity\EntityInterface::getConfigTarget()
+   */
+  public function loadEntityByConfigTarget($entity_type_id, $target);
 
   /**
    * Returns the entity type ID based on the class that is called on.

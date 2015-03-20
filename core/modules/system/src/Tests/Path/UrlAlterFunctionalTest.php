@@ -62,7 +62,7 @@ class UrlAlterFunctionalTest extends WebTestBase {
     $this->drupalGet('community');
     $this->assertText('General discussion', 'The community path gets resolved correctly');
     $this->assertUrlOutboundAlter('forum', 'community');
-    $forum_vid = \Drupal::config('forum.settings')->get('vocabulary');
+    $forum_vid = $this->config('forum.settings')->get('vocabulary');
     $term_name = $this->randomMachineName();
     $term = entity_create('taxonomy_term', array(
       'name' => $term_name,
@@ -75,21 +75,12 @@ class UrlAlterFunctionalTest extends WebTestBase {
   }
 
   /**
-   * Test current_path() and request_path().
-   */
-  function testCurrentUrlRequestedPath() {
-    $this->drupalGet('url-alter-test/bar');
-    $this->assertRaw('request_path=url-alter-test/bar', 'request_path() returns the requested path.');
-    $this->assertRaw('current_path=url-alter-test/foo', 'current_path() returns the internal path.');
-  }
-
-  /**
    * Assert that an outbound path is altered to an expected value.
    *
    * @param $original
-   *   A string with the original path that is run through _url().
+   *   A string with the original path that is run through generateFrommPath().
    * @param $final
-   *   A string with the expected result after _url().
+   *   A string with the expected result after generateFrommPath().
    * @return
    *   TRUE if $original was correctly altered to $final, FALSE otherwise.
    */
@@ -107,7 +98,7 @@ class UrlAlterFunctionalTest extends WebTestBase {
    * @param $original
    *   The original path before it has been altered by inbound URL processing.
    * @param $final
-   *   A string with the expected result after _url().
+   *   A string with the expected result.
    * @return
    *   TRUE if $original was correctly altered to $final, FALSE otherwise.
    */

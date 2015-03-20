@@ -7,9 +7,11 @@
 
 namespace Drupal\system\Controller;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\PreExistingConfigException;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Extension\ThemeHandlerInterface;
-use Drupal\Core\Routing\RouteBuilderInterface;
+use Drupal\Core\Routing\RouteBuilderIndicatorInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -29,21 +31,24 @@ class ThemeController extends ControllerBase {
   /**
    * The route builder service.
    *
-   * @var \Drupal\Core\Routing\RouteBuilderInterface
+   * @var \Drupal\Core\Routing\RouteBuilderIndicatorInterface
    */
-  protected $routeBuilder;
+  protected $routeBuilderIndicator;
 
   /**
    * Constructs a new ThemeController.
    *
    * @param \Drupal\Core\Extension\ThemeHandlerInterface $theme_handler
    *   The theme handler.
-   * @param \Drupal\Core\Routing\RouteBuilderInterface $route_builder
+   * @param \Drupal\Core\Routing\RouteBuilderInterface $route_builder_indicator
    *   The route builder.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
    */
-  public function __construct(ThemeHandlerInterface $theme_handler, RouteBuilderInterface $route_builder) {
+  public function __construct(ThemeHandlerInterface $theme_handler, RouteBuilderIndicatorInterface $route_builder_indicator, ConfigFactoryInterface $config_factory) {
     $this->themeHandler = $theme_handler;
-    $this->routeBuilder = $route_builder;
+    $this->routeBuilderIndicator = $route_builder_indicator;
+    $this->configFactory = $config_factory;
   }
 
   /**
@@ -52,7 +57,8 @@ class ThemeController extends ControllerBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('theme_handler'),
-      $container->get('router.builder')
+      $container->get('router.builder_indicator'),
+      $container->get('config.factory')
     );
   }
 
@@ -115,12 +121,28 @@ class ThemeController extends ControllerBase {
     $theme = $request->get('theme');
 
     if (isset($theme)) {
-      if ($this->themeHandler->install(array($theme))) {
-        $themes = $this->themeHandler->listInfo();
-        drupal_set_message($this->t('The %theme theme has been installed.', array('%theme' => $themes[$theme]->info['name'])));
+      try {
+        if ($this->themeHandler->install(array($theme))) {
+          $themes = $this->themeHandler->listInfo();
+          drupal_set_message($this->t('The %theme theme has been installed.', array('%theme' => $themes[$theme]->info['name'])));
+        }
+        else {
+          drupal_set_message($this->t('The %theme theme was not found.', array('%theme' => $theme)), 'error');
+        }
       }
-      else {
-        drupal_set_message($this->t('The %theme theme was not found.', array('%theme' => $theme)), 'error');
+      catch (PreExistingConfigException $e) {
+        $config_objects = $e->flattenConfigObjects($e->getConfigObjects());
+        drupal_set_message(
+          $this->formatPlural(
+            count($config_objects),
+            'Unable to install @extension, %config_names already exists in active configuration.',
+            'Unable to install @extension, %config_names already exist in active configuration.',
+            array(
+              '%config_names' => implode(', ', $config_objects),
+              '@extension' => $theme,
+            )),
+          'error'
+        );
       }
 
       return $this->redirect('system.themes_page');
@@ -142,7 +164,7 @@ class ThemeController extends ControllerBase {
    *   Throws access denied when no theme is set in the request.
    */
   public function setDefaultTheme(Request $request) {
-    $config = $this->config('system.theme');
+    $config = $this->configFactory->getEditable('system.theme');
     $theme = $request->query->get('theme');
 
     if (isset($theme)) {
@@ -157,7 +179,7 @@ class ThemeController extends ControllerBase {
         // Set the default theme.
         $config->set('default', $theme)->save();
 
-        $this->routeBuilder->setRebuildNeeded();
+        $this->routeBuilderIndicator->setRebuildNeeded();
 
         // The status message depends on whether an admin theme is currently in
         // use: a value of 0 means the admin theme is set to be the default

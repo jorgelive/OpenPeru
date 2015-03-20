@@ -8,8 +8,10 @@
 namespace Drupal\views\Plugin\views\cache;
 
 use Drupal\Core\Cache\Cache;
+use Drupal\Core\Render\RendererInterface;
 use Drupal\views\Plugin\views\PluginBase;
 use Drupal\Core\Database\Query\Select;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * @defgroup views_cache_plugins Views cache plugins
@@ -70,6 +72,43 @@ abstract class CachePluginBase extends PluginBase {
    * @see \Drupal\views\Plugin\views\cache\CachePluginBase::generateOutputKey()
    */
   protected $outputKey;
+
+  /**
+   * The renderer service.
+   *
+   * @var \Drupal\Core\Render\RendererInterface
+   */
+  protected $renderer;
+
+  /**
+   * Constructs a CachePluginBase object.
+   *
+   * @param array $configuration
+   *   A configuration array containing information about the plugin instance.
+   * @param string $plugin_id
+   *   The plugin_id for the plugin instance.
+   * @param mixed $plugin_definition
+   *   The plugin implementation definition.
+   * @param \Drupal\Core\Render\RendererInterface $renderer
+   *   The renderer service.
+   */
+  public function __construct(array $configuration, $plugin_id, $plugin_definition, RendererInterface $renderer) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
+
+    $this->renderer = $renderer;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
+    return new static(
+      $configuration,
+      $plugin_id,
+      $plugin_definition,
+      $container->get('renderer')
+    );
+  }
 
   /**
    * Returns the outputKey property.
@@ -135,15 +174,15 @@ abstract class CachePluginBase extends PluginBase {
         break;
       case 'results':
         $data = array(
-          'result' => $this->view->result,
+          'result' => $this->prepareViewResult($this->view->result),
           'total_rows' => isset($this->view->total_rows) ? $this->view->total_rows : 0,
           'current_page' => $this->view->getCurrentPage(),
         );
         \Drupal::cache($this->resultsBin)->set($this->generateResultsKey(), $data, $this->cacheSetExpire($type), $this->getCacheTags());
         break;
       case 'output':
-        $this->gatherHeaders($this->view->display_handler->output);
-        $this->storage['output'] = drupal_render($this->view->display_handler->output, TRUE);
+        $this->renderer->render($this->view->display_handler->output);
+        $this->storage = $this->renderer->getCacheableRenderArray($this->view->display_handler->output);
         \Drupal::cache($this->outputBin)->set($this->generateOutputKey(), $this->storage, $this->cacheSetExpire($type), $this->getCacheTags());
         break;
     }
@@ -166,6 +205,8 @@ abstract class CachePluginBase extends PluginBase {
         if ($cache = \Drupal::cache($this->resultsBin)->get($this->generateResultsKey())) {
           if (!$cutoff || $cache->created > $cutoff) {
             $this->view->result = $cache->data['result'];
+            // Load entities for each result.
+            $this->view->query->loadEntities($this->view->result);
             $this->view->total_rows = $cache->data['total_rows'];
             $this->view->setCurrentPage($cache->data['current_page']);
             $this->view->execute_time = 0;
@@ -177,13 +218,10 @@ abstract class CachePluginBase extends PluginBase {
         if ($cache = \Drupal::cache($this->outputBin)->get($this->generateOutputKey())) {
           if (!$cutoff || $cache->created > $cutoff) {
             $this->storage = $cache->data;
-
-            $this->restoreHeaders();
-            $this->view->display_handler->output = array(
-              '#attached' => &$this->view->element['#attached'],
-              '#markup' => $cache->data['output'],
-            );
-
+            $this->view->display_handler->output = $this->storage;
+            $this->view->element['#attached'] = &$this->view->display_handler->output['#attached'];
+            $this->view->element['#cache']['tags'] = &$this->view->display_handler->output['#cache']['tags'];
+            $this->view->element['#post_render_cache'] = &$this->view->display_handler->output['#post_render_cache'];
             return TRUE;
           }
         }
@@ -198,8 +236,7 @@ abstract class CachePluginBase extends PluginBase {
    * to be sure that we catch everything. Maybe that's a bad idea.
    */
   public function cacheFlush() {
-    $id = $this->view->storage->id();
-    Cache::invalidateTags(array('view:' . $id));
+    Cache::invalidateTags($this->view->storage->getCacheTags());
   }
 
   /**
@@ -226,61 +263,8 @@ abstract class CachePluginBase extends PluginBase {
 
   /**
    * Start caching the html head.
-   *
-   * This takes a snapshot of the current system state so that we don't
-   * duplicate it. Later on, when gatherHeaders() is run, this information
-   * will be removed so that we don't hold onto it.
-   *
-   * @see drupal_add_html_head()
    */
-  public function cacheStart() {
-    $this->storage['head'] = drupal_add_html_head();
-  }
-
-  /**
-   * Gather the JS/CSS from the render array and the html head from band data.
-   *
-   * @param array $render_array
-   *   The view render array to collect data from.
-   */
-  protected function gatherHeaders(array $render_array = []) {
-    // Simple replacement for head
-    if (isset($this->storage['head'])) {
-      $this->storage['head'] = str_replace($this->storage['head'], '', drupal_add_html_head());
-    }
-    else {
-      $this->storage['head'] = '';
-    }
-
-    $this->storage['css'] = $render_array['#attached']['css'];
-    $this->storage['js'] = $render_array['#attached']['js'];
-  }
-
-  /**
-   * Restore out of band data saved to cache. Copied from Panels.
-   */
-  public function restoreHeaders() {
-    if (!empty($this->storage['head'])) {
-      drupal_add_html_head($this->storage['head']);
-    }
-    if (!empty($this->storage['css'])) {
-      foreach ($this->storage['css'] as $args) {
-        $this->view->element['#attached']['css'][] = $args;
-      }
-    }
-    if (!empty($this->storage['js'])) {
-      foreach ($this->storage['js'] as $key => $args) {
-        if ($key !== 'settings') {
-          $this->view->element['#attached']['js'][] = $args;
-        }
-        else {
-          foreach ($args as $setting) {
-            $this->view->element['#attached']['js']['setting'][] = $setting;
-          }
-        }
-      }
-    }
-  }
+  public function cacheStart() { }
 
   /**
    * Calculates and sets a cache ID used for the result cache.
@@ -306,7 +290,7 @@ abstract class CachePluginBase extends PluginBase {
         'build_info' => $build_info,
         'roles' => $user->getRoles(),
         'super-user' => $user->id() == 1, // special caching for super user.
-        'langcode' => \Drupal::languageManager()->getCurrentLanguage()->id,
+        'langcode' => \Drupal::languageManager()->getCurrentLanguage()->getId(),
         'base_url' => $GLOBALS['base_url'],
       );
       foreach (array('exposed_info', 'page', 'sort', 'order', 'items_per_page', 'offset') as $key) {
@@ -335,7 +319,7 @@ abstract class CachePluginBase extends PluginBase {
         'roles' => $user->getRoles(),
         'super-user' => $user->id() == 1, // special caching for super user.
         'theme' => \Drupal::theme()->getActiveTheme()->getName(),
-        'langcode' => \Drupal::languageManager()->getCurrentLanguage()->id,
+        'langcode' => \Drupal::languageManager()->getCurrentLanguage()->getId(),
         'base_url' => $GLOBALS['base_url'],
       );
 
@@ -348,23 +332,56 @@ abstract class CachePluginBase extends PluginBase {
   /**
    * Gets an array of cache tags for the current view.
    *
-   * @return array
-   *   An array fo cache tags based on the current view.
+   * @return string[]
+   *   An array of cache tags based on the current view.
    */
   protected function getCacheTags() {
-    $id = $this->view->storage->id();
-    $tags = array('view:' . $id);
+    $tags = $this->view->storage->getCacheTags();
 
     $entity_information = $this->view->query->getEntityTableInfo();
 
     if (!empty($entity_information)) {
-      // Add an ENTITY_TYPE_list tag for each entity type used by this view.
+      // Add the list cache tags for each entity type used by this view.
       foreach (array_keys($entity_information) as $entity_type) {
-        $tags[] = $entity_type . '_list';
+        $tags = Cache::mergeTags($tags, \Drupal::entityManager()->getDefinition($entity_type)->getListCacheTags());
       }
     }
 
     return $tags;
+  }
+
+  /**
+   * Prepares the view result before putting it into cache.
+   *
+   * @param \Drupal\views\ResultRow[] $result
+   *   The result containing loaded entities.
+   *
+   * @return \Drupal\views\ResultRow[] $result
+   *   The result without loaded entities.
+   */
+  protected function prepareViewResult(array $result) {
+    $return = [];
+
+    // Clone each row object and remove any loaded entities, to keep the
+    // original result rows intact.
+    foreach ($result as $key => $row) {
+      $clone = clone $row;
+      $clone->resetEntityData();
+      $return[$key] = $clone;
+    }
+
+    return $return;
+  }
+
+  /**
+   * Alters the cache metadata of a display upon saving a view.
+   *
+   * @param bool $is_cacheable
+   *   Whether the display is cacheable.
+   * @param string[] $cache_contexts
+   *   The cache contexts the display varies by.
+   */
+  public function alterCacheMetadata(&$is_cacheable, array &$cache_contexts) {
   }
 
 }

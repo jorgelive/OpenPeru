@@ -55,7 +55,7 @@ class DefaultPluginManagerTest extends UnitTestCase {
     );
 
     $this->namespaces = new \ArrayObject();
-    $this->namespaces['Drupal\plugin_test'] = DRUPAL_ROOT . '/core/modules/system/tests/modules/plugin_test/src';
+    $this->namespaces['Drupal\plugin_test'] = $this->root . '/core/modules/system/tests/modules/plugin_test/src';
   }
 
   /**
@@ -190,18 +190,17 @@ class DefaultPluginManagerTest extends UnitTestCase {
    */
   public function testCacheClearWithTags() {
     $cid = $this->randomMachineName();
-    $cache_backend = $this->getMockBuilder('Drupal\Core\Cache\MemoryBackend')
-      ->disableOriginalConstructor()
-      ->getMock();
-    $cache_backend
+    $cache_backend = $this->getMock('Drupal\Core\Cache\CacheBackendInterface');
+    $cache_tags_invalidator = $this->getMock('Drupal\Core\Cache\CacheTagsInvalidatorInterface');
+    $cache_tags_invalidator
       ->expects($this->once())
-      ->method('deleteTags')
+      ->method('invalidateTags')
       ->with(array('tag'));
     $cache_backend
       ->expects($this->never())
       ->method('deleteMultiple');
 
-    $this->getContainerWithCacheBins($cache_backend);
+    $this->getContainerWithCacheTagsInvalidator($cache_tags_invalidator);
 
     $plugin_manager = new TestPluginManager($this->namespaces, $this->expectedDefinitions, NULL, NULL, '\Drupal\plugin_test\Plugin\plugin_test\fruit\FruitInterface');
     $plugin_manager->setCacheBackend($cache_backend, $cid, array('tag'));
@@ -213,13 +212,12 @@ class DefaultPluginManagerTest extends UnitTestCase {
    * Tests plugins with the proper interface.
    *
    * @covers ::createInstance
-   * @covers ::enforcePluginInterface
    */
   public function testCreateInstanceWithJustValidInterfaces() {
     $plugin_manager = new TestPluginManager($this->namespaces, $this->expectedDefinitions, NULL, NULL, '\Drupal\plugin_test\Plugin\plugin_test\fruit\FruitInterface');
 
     foreach ($this->expectedDefinitions as $plugin_id => $definition) {
-      $plugin_manager->createInstance($plugin_id);
+      $this->assertNotNull($plugin_manager->createInstance($plugin_id));
     }
   }
 
@@ -227,7 +225,6 @@ class DefaultPluginManagerTest extends UnitTestCase {
    * Tests plugins without the proper interface.
    *
    * @covers ::createInstance
-   * @covers ::enforcePluginInterface
    *
    * @expectedException \Drupal\Component\Plugin\Exception\PluginException
    * @expectedExceptionMessage Plugin "kale" (Drupal\plugin_test\Plugin\plugin_test\fruit\Kale) in plugin_test should implement interface \Drupal\plugin_test\Plugin\plugin_test\fruit\FruitInterface
@@ -258,7 +255,6 @@ class DefaultPluginManagerTest extends UnitTestCase {
    * Tests plugins without a required interface.
    *
    * @covers ::getDefinitions
-   * @covers ::enforcePluginInterface
    */
   public function testGetDefinitionsWithoutRequiredInterface() {
     $module_handler = $this->getMock('Drupal\Core\Extension\ModuleHandlerInterface');
@@ -279,7 +275,7 @@ class DefaultPluginManagerTest extends UnitTestCase {
     $this->expectedDefinitions['banana']['provider'] = 'plugin_test';
 
     $plugin_manager = new TestPluginManager($this->namespaces, $this->expectedDefinitions, $module_handler, NULL);
-    $plugin_manager->getDefinitions();
+    $this->assertInternalType('array', $plugin_manager->getDefinitions());
   }
 
 }

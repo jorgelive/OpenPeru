@@ -7,6 +7,7 @@
 
 namespace Drupal\views_ui;
 
+use Drupal\Component\Utility\Html;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Component\Utility\Xss;
 use Drupal\Core\Ajax\AjaxResponse;
@@ -18,7 +19,7 @@ use Drupal\Component\Utility\String;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Render\Element;
 use Drupal\Core\Url;
-use Drupal\user\TempStoreFactory;
+use Drupal\user\SharedTempStoreFactory;
 use Drupal\views\Views;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -32,7 +33,7 @@ class ViewEditForm extends ViewFormBase {
   /**
    * The views temp store.
    *
-   * @var \Drupal\user\TempStore
+   * @var \Drupal\user\SharedTempStore
    */
   protected $tempStore;
 
@@ -53,14 +54,14 @@ class ViewEditForm extends ViewFormBase {
   /**
    * Constructs a new ViewEditForm object.
    *
-   * @param \Drupal\user\TempStoreFactory $temp_store_factory
+   * @param \Drupal\user\SharedTempStoreFactory $temp_store_factory
    *   The factory for the temp store object.
    * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
    *   The request stack object.
    * @param \Drupal\Core\Datetime\DateFormatter $date_formatter
    *   The date Formatter service.
    */
-  public function __construct(TempStoreFactory $temp_store_factory, RequestStack $requestStack, DateFormatter $date_formatter) {
+  public function __construct(SharedTempStoreFactory $temp_store_factory, RequestStack $requestStack, DateFormatter $date_formatter) {
     $this->tempStore = $temp_store_factory->get('views');
     $this->requestStack = $requestStack;
     $this->dateFormatter = $date_formatter;
@@ -71,7 +72,7 @@ class ViewEditForm extends ViewFormBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('user.tempstore'),
+      $container->get('user.shared_tempstore'),
       $container->get('request_stack'),
       $container->get('date.formatter')
     );
@@ -106,22 +107,15 @@ class ViewEditForm extends ViewFormBase {
     $form['#attached']['library'][] = 'core/jquery.ui.dialog';
     $form['#attached']['library'][] = 'core/drupal.states';
     $form['#attached']['library'][] = 'core/drupal.tabledrag';
+    $form['#attached']['library'][] = 'views_ui/views_ui.admin';
+    $form['#attached']['library'][] = 'views_ui/admin.styling';
 
-    if (!\Drupal::config('views.settings')->get('no_javascript')) {
-      $form['#attached']['library'][] = 'views_ui/views_ui.admin';
-    }
-
-    $form['#attached']['css'] = static::getAdminCSS();
-
-    $form['#attached']['js'][] = array(
-      'data' => array('views' => array('ajax' => array(
-        'id' => '#views-ajax-body',
-        'title' => '#views-ajax-title',
-        'popup' => '#views-ajax-popup',
-        'defaultForm' => $view->getDefaultAJAXMessage(),
-      ))),
-      'type' => 'setting',
-    );
+    $form['#attached']['drupalSettings']['views']['ajax'] = [
+      'id' => '#views-ajax-body',
+      'title' => '#views-ajax-title',
+      'popup' => '#views-ajax-popup',
+      'defaultForm' => $view->getDefaultAJAXMessage(),
+    ];
 
     $form += array(
       '#prefix' => '',
@@ -142,12 +136,12 @@ class ViewEditForm extends ViewFormBase {
       $lock_message_substitutions = array(
         '!user' => drupal_render($username),
         '!age' => $this->dateFormatter->formatInterval(REQUEST_TIME - $view->lock->updated),
-        '!break' => $view->url('break-lock-form'),
+        '@url' => $view->url('break-lock-form'),
       );
       $form['locked'] = array(
         '#type' => 'container',
         '#attributes' => array('class' => array('view-locked', 'messages', 'messages--warning')),
-        '#children' => $this->t('This view is being edited by user !user, and is therefore locked from editing by others. This lock is !age old. Click here to <a href="!break">break this lock</a>.', $lock_message_substitutions),
+        '#children' => $this->t('This view is being edited by user !user, and is therefore locked from editing by others. This lock is !age old. Click here to <a href="@url">break this lock</a>.', $lock_message_substitutions),
         '#weight' => -10,
       );
     }
@@ -224,7 +218,6 @@ class ViewEditForm extends ViewFormBase {
       $form['ajax-area']['ajax-body'] = array(
         '#type' => 'container',
         '#id' => 'views-ajax-body',
-        '#children' => $view->getDefaultAJAXMessage(),
       );
     }
 
@@ -323,7 +316,9 @@ class ViewEditForm extends ViewFormBase {
           $query->remove('destination');
         }
       }
-      $form_state->setRedirectUrl(Url::fromUri("base://$destination"));
+      // @todo Use Url::fromPath() once https://www.drupal.org/node/2351379 is
+      //   resolved.
+      $form_state->setRedirectUrl(Url::fromUri("base:$destination"));
     }
 
     $view->save();
@@ -346,7 +341,7 @@ class ViewEditForm extends ViewFormBase {
     // Remove this view from cache so edits will be lost.
     $view = $this->entity;
     $this->tempStore->delete($view->id());
-    $form_state->setRedirect('views_ui.list');
+    $form_state->setRedirectUrl($this->entity->urlInfo('collection'));
   }
 
   /**
@@ -427,7 +422,9 @@ class ViewEditForm extends ViewFormBase {
               '#type' => 'link',
               '#title' => $this->t('View !display_title', array('!display_title' => $display_title)),
               '#options' => array('alt' => array($this->t("Go to the real page for this display"))),
-              '#href' => $path,
+              // @todo Use Url::fromPath() once
+              //   https://www.drupal.org/node/2351379 is resolved.
+              '#url' => Url::fromUri("base:$path"),
               '#prefix' => '<li class="view">',
               "#suffix" => '</li>',
             );
@@ -558,7 +555,7 @@ class ViewEditForm extends ViewFormBase {
         $build['columns'][$column][$id] = $bucket['build'];
         $build['columns'][$column][$id]['#theme_wrappers'][] = 'views_ui_display_tab_bucket';
         $build['columns'][$column][$id]['#title'] = !empty($bucket['title']) ? $bucket['title'] : '';
-        $build['columns'][$column][$id]['#name'] = !empty($bucket['title']) ? $bucket['title'] : $id;
+        $build['columns'][$column][$id]['#name'] = $id;
       }
     }
 
@@ -695,20 +692,21 @@ class ViewEditForm extends ViewFormBase {
       '#links' => array(
         'edit-details' => array(
           'title' => $this->t('Edit view name/description'),
-          'href' => "admin/structure/views/nojs/edit-details/{$view->id()}/$display_id",
+          'url' => Url::fromRoute('views_ui.form_edit_details', ['js' => 'nojs', 'view' => $view->id(), 'display_id' => $display_id]),
           'attributes' => array('class' => array('views-ajax-link')),
         ),
         'analyze' => array(
           'title' => $this->t('Analyze view'),
-          'href' => "admin/structure/views/nojs/analyze/{$view->id()}/$display_id",
+          'url' => Url::fromRoute('views_ui.form_analyze', ['js' => 'nojs', 'view' => $view->id(), 'display_id' => $display_id]),
           'attributes' => array('class' => array('views-ajax-link')),
         ),
         'duplicate' => array(
           'title' => $this->t('Duplicate view'),
-        ) + $view->urlInfo('duplicate-form')->toArray(),
+          'url' => $view->urlInfo('duplicate-form'),
+        ),
         'reorder' => array(
           'title' => $this->t('Reorder displays'),
-          'href' => "admin/structure/views/nojs/reorder-displays/{$view->id()}/$display_id",
+          'url' => Url::fromRoute('views_ui.form_reorder_displays', ['js' => 'nojs', 'view' => $view->id(), 'display_id' => $display_id]),
           'attributes' => array('class' => array('views-ajax-link')),
         ),
       ),
@@ -717,7 +715,8 @@ class ViewEditForm extends ViewFormBase {
     if ($view->access('delete')) {
       $element['extra_actions']['#links']['delete'] = array(
         'title' => $this->t('Delete view'),
-      ) + $view->urlInfo('delete-form')->toArray();
+        'url' => $view->urlInfo('delete-form'),
+      );
     }
 
     // Let other modules add additional links here.
@@ -728,13 +727,13 @@ class ViewEditForm extends ViewFormBase {
         $element['extra_actions']['#links']['revert'] = array(
           'title' => $this->t('Revert view'),
           'href' => "admin/structure/views/view/{$view->id()}/revert",
-          'query' => array('destination' => "admin/structure/views/view/{$view->id()}"),
+          'query' => array('destination' => $view->url('edit-form')),
         );
       }
       else {
         $element['extra_actions']['#links']['delete'] = array(
           'title' => $this->t('Delete view'),
-          'href' => "admin/structure/views/view/{$view->id()}/delete",
+          'url' => $view->urlInfo('delete-form'),
         );
       }
     }
@@ -771,7 +770,7 @@ class ViewEditForm extends ViewFormBase {
    * Submit handler for form buttons that do not complete a form workflow.
    *
    * The Edit View form is a multistep form workflow, but with state managed by
-   * the TempStore rather than $form_state->setRebuild(). Without this
+   * the SharedTempStore rather than $form_state->setRebuild(). Without this
    * submit handler, buttons that add or remove displays would redirect to the
    * destination parameter (e.g., when the Edit View form is linked to from a
    * contextual link). This handler can be added to buttons whose form submission
@@ -856,25 +855,15 @@ class ViewEditForm extends ViewFormBase {
    * Submit handler to Duplicate a display as another display type.
    */
   public function submitDuplicateDisplayAsType($form, FormStateInterface $form_state) {
+    /** @var \Drupal\views\ViewEntityInterface $view */
     $view = $this->entity;
     $display_id = $this->displayID;
 
     // Create the new display.
     $parents = $form_state->getTriggeringElement()['#parents'];
     $display_type = array_pop($parents);
-    $display = $view->getExecutable()->newDisplay($display_type);
-    $new_display_id = $display->display['id'];
-    $displays = $view->get('display');
 
-    // Let the display title be generated by the addDisplay method and set the
-    // right display plugin, but keep the rest from the original display.
-    $display_duplicate = $displays[$display_id];
-    unset($display_duplicate['display_title']);
-    unset($display_duplicate['display_plugin']);
-
-    $displays[$new_display_id] = NestedArray::mergeDeep($displays[$new_display_id], $display_duplicate);
-    $displays[$new_display_id]['id'] = $new_display_id;
-    $view->set('display', $displays);
+    $new_display_id = $view->duplicateDisplayAsType($display_id, $display_type);
 
     // By setting the current display the changed marker will appear on the new
     // display.
@@ -921,7 +910,7 @@ class ViewEditForm extends ViewFormBase {
         }
       }
     }
-    $option_build['#attributes']['class'][] = drupal_clean_css_identifier($display_id . '-' . $id);
+    $option_build['#attributes']['class'][] = Html::cleanCssIdentifier($display_id . '-' . $id);
     return $option_build;
   }
 
@@ -942,9 +931,10 @@ class ViewEditForm extends ViewFormBase {
     $build['#overridden'] = FALSE;
     $build['#defaulted'] = FALSE;
 
-    $build['#name'] = $build['#title'] = $types[$type]['title'];
+    $build['#name'] = $type;
+    $build['#title'] = $types[$type]['title'];
 
-    $rearrange_url = "admin/structure/views/nojs/rearrange/{$view->id()}/{$display['id']}/$type";
+    $rearrange_url = Url::fromRoute('views_ui.form_rearrange', ['js' => 'nojs', 'view' => $view->id(), 'display_id' => $display['id'], 'type' => $type]);
     $class = 'icon compact rearrange';
 
     // Different types now have different rearrange forms, so we use this switch
@@ -953,7 +943,7 @@ class ViewEditForm extends ViewFormBase {
       case 'filter':
         // The rearrange form for filters contains the and/or UI, so override
         // the used path.
-        $rearrange_url = "admin/structure/views/nojs/rearrange-filter/{$view->id()}/{$display['id']}";
+        $rearrange_url = Url::fromRoute('views_ui.form_rearrange_filter', ['js' => 'nojs', 'view' => $view->id(), 'display_id' => $display['id']]);
         // TODO: Add another class to have another symbol for filter rearrange.
         $class = 'icon compact rearrange';
         break;
@@ -963,7 +953,7 @@ class ViewEditForm extends ViewFormBase {
         $uses_fields = $style_plugin && $style_plugin->usesFields();
         if (!$uses_fields) {
           $build['fields'][] = array(
-            '#markup' => $this->t('The selected style or row format does not utilize fields.'),
+            '#markup' => $this->t('The selected style or row format does not use fields.'),
             '#theme_wrappers' => array('views_ui_container'),
             '#attributes' => array('class' => array('views-display-setting')),
           );
@@ -975,7 +965,7 @@ class ViewEditForm extends ViewFormBase {
       case 'empty':
         if (!$executable->display_handler->usesAreas()) {
           $build[$type][] = array(
-            '#markup' => $this->t('The selected display type does not utilize @type plugins', array('@type' => $type)),
+            '#markup' => $this->t('The selected display type does not use @type plugins', array('@type' => $type)),
             '#theme_wrappers' => array('views_ui_container'),
             '#attributes' => array('class' => array('views-display-setting')),
           );
@@ -993,7 +983,7 @@ class ViewEditForm extends ViewFormBase {
 
     $actions['add'] = array(
       'title' => $add_text,
-      'href' => "admin/structure/views/nojs/add-handler/{$view->id()}/{$display['id']}/$type",
+      'url' => Url::fromRoute('views_ui.form_add_handler', ['js' => 'nojs', 'view' => $view->id(), 'display_id' => $display['id'], 'type' => $type]),
       'attributes' => array('class' => array('icon compact add', 'views-ajax-link'), 'id' => 'views-add-' . $type),
       'html' => TRUE,
     );
@@ -1003,7 +993,7 @@ class ViewEditForm extends ViewFormBase {
 
       $actions['rearrange'] = array(
         'title' => $rearrange_text,
-        'href' => $rearrange_url,
+        'url' => $rearrange_url,
         'attributes' => array('class' => array($class, 'views-ajax-link'), 'id' => 'views-rearrange-' . $type),
         'html' => TRUE,
       );
@@ -1091,7 +1081,7 @@ class ViewEditForm extends ViewFormBase {
         'type' => $type,
         'id' => $id,
       ), array('attributes' => $link_attributes, 'html' => TRUE)));
-      $build['fields'][$id]['#class'][] = drupal_clean_css_identifier($display['id']. '-' . $type . '-' . $id);
+      $build['fields'][$id]['#class'][] = Html::cleanCssIdentifier($display['id']. '-' . $type . '-' . $id);
 
       if ($executable->display_handler->useGroupBy() && $handler->usesGroupBy()) {
         $build['fields'][$id]['#settings_links'][] = $this->l('<span class="label">' . $this->t('Aggregation settings') . '</span>', new Url('views_ui.form_handler_group', array(
@@ -1153,7 +1143,8 @@ class ViewEditForm extends ViewFormBase {
   }
 
   /**
-   * Recursively adds microweights to a render array, similar to what form_builder() does for forms.
+   * Recursively adds microweights to a render array, similar to what
+   * \Drupal::formBuilder()->doBuildForm() does for forms.
    *
    * @todo Submit a core patch to fix drupal_render() to do this, so that all
    *   render arrays automatically preserve array insertion order, as forms do.

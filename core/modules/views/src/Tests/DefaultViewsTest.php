@@ -8,6 +8,8 @@
 namespace Drupal\views\Tests;
 
 use Drupal\comment\CommentInterface;
+use Drupal\comment\Tests\CommentTestTrait;
+use Drupal\Component\Utility\Unicode;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Url;
 use Drupal\simpletest\WebTestBase;
@@ -20,6 +22,8 @@ use Drupal\views\Views;
  * @group views
  */
 class DefaultViewsTest extends ViewTestBase {
+
+  use CommentTestTrait;
 
   /**
    * Modules to enable.
@@ -45,34 +49,34 @@ class DefaultViewsTest extends ViewTestBase {
     // Create Basic page node type.
     $this->drupalCreateContentType(array('type' => 'page', 'name' => 'Basic page'));
 
-    $this->vocabulary = entity_create('taxonomy_vocabulary', array(
+    $vocabulary = entity_create('taxonomy_vocabulary', array(
       'name' => $this->randomMachineName(),
       'description' => $this->randomMachineName(),
-      'vid' => drupal_strtolower($this->randomMachineName()),
+      'vid' => Unicode::strtolower($this->randomMachineName()),
       'langcode' => LanguageInterface::LANGCODE_NOT_SPECIFIED,
       'help' => '',
       'nodes' => array('page' => 'page'),
       'weight' => mt_rand(0, 10),
     ));
-    $this->vocabulary->save();
+    $vocabulary->save();
 
     // Create a field.
-    $this->field_name = drupal_strtolower($this->randomMachineName());
+    $field_name = Unicode::strtolower($this->randomMachineName());
     entity_create('field_storage_config', array(
-      'field_name' => $this->field_name,
+      'field_name' => $field_name,
       'entity_type' => 'node',
       'type' => 'taxonomy_term_reference',
       'settings' => array(
         'allowed_values' => array(
           array(
-            'vocabulary' => $this->vocabulary->id(),
+            'vocabulary' => $vocabulary->id(),
             'parent' => '0',
           ),
         ),
       )
     ))->save();
     entity_create('field_config', array(
-      'field_name' => $this->field_name,
+      'field_name' => $field_name,
       'entity_type' => 'node',
       'bundle' => 'page',
     ))->save();
@@ -80,16 +84,16 @@ class DefaultViewsTest extends ViewTestBase {
     // Create a time in the past for the archive.
     $time = REQUEST_TIME - 3600;
 
-    $this->container->get('comment.manager')->addDefaultField('node', 'page');
+    $this->addDefaultCommentField('node', 'page');
 
     $this->container->get('views.views_data')->clear();
 
     for ($i = 0; $i <= 10; $i++) {
       $user = $this->drupalCreateUser();
-      $term = $this->createTerm($this->vocabulary);
+      $term = $this->createTerm($vocabulary);
 
       $values = array('created' => $time, 'type' => 'page');
-      $values[$this->field_name][]['target_id'] = $term->id();
+      $values[$field_name][]['target_id'] = $term->id();
 
       // Make every other node promoted.
       if ($i % 2) {
@@ -157,7 +161,7 @@ class DefaultViewsTest extends ViewTestBase {
       'name' => $this->randomMachineName(),
       'description' => $this->randomMachineName(),
       // Use the first available text format.
-      'format' => $format->format,
+      'format' => $format->id(),
       'vid' => $vocabulary->id(),
       'langcode' => LanguageInterface::LANGCODE_NOT_SPECIFIED,
     ));

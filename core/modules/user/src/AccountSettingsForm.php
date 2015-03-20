@@ -59,11 +59,24 @@ class AccountSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
+  protected function getEditableConfigNames() {
+    return [
+      'system.site',
+      'user.mail',
+      'user.settings',
+    ];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $form = parent::buildForm($form, $form_state);
     $config = $this->config('user.settings');
     $mail_config = $this->config('user.mail');
     $site_config = $this->config('system.site');
+
+    $form['#attached']['library'][] = 'user/drupal.user.admin';
 
     // Settings for anonymous users.
     $form['anonymous_settings'] = array(

@@ -16,6 +16,7 @@ use Drupal\Core\KeyValueStore\KeyValueMemoryFactory;
 use Drupal\Core\Language\Language;
 use Drupal\Core\Site\Settings;
 use Symfony\Component\DependencyInjection\Parameter;
+use Drupal\Core\StreamWrapper\StreamWrapperInterface;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -78,13 +79,11 @@ abstract class KernelTestBase extends TestBase {
   protected $keyValueFactory;
 
   /**
-   * A list of stream wrappers that have been registered for this test.
-   *
-   * @see \Drupal\simpletest\KernelTestBase::registerStreamWrapper()
+   * Array of registered stream wrappers.
    *
    * @var array
    */
-  private $streamWrappers = array();
+  protected $streamWrappers = array();
 
   /**
    * {@inheritdoc}
@@ -136,22 +135,22 @@ abstract class KernelTestBase extends TestBase {
   protected function setUp() {
     $this->keyValueFactory = new KeyValueMemoryFactory();
 
+    // Back up settings from TestBase::prepareEnvironment().
+    $settings = Settings::getAll();
+
     // Allow for test-specific overrides.
     $settings_services_file = DRUPAL_ROOT . '/' . $this->originalSite . '/testing.services.yml';
     if (file_exists($settings_services_file)) {
       // Copy the testing-specific service overrides in place.
-      copy($settings_services_file, DRUPAL_ROOT . '/' . $this->siteDirectory . '/services.yml');
+      $testing_services_file = DRUPAL_ROOT . '/' . $this->siteDirectory . '/services.yml';
+      copy($settings_services_file, $testing_services_file);
+      $this->settingsSet('container_yamls', [$testing_services_file]);
     }
-
-    // Create and set new configuration directories.
-    $this->prepareConfigDirectories();
 
     // Add this test class as a service provider.
     // @todo Remove the indirection; implement ServiceProviderInterface instead.
     $GLOBALS['conf']['container_service_providers']['TestServiceProvider'] = 'Drupal\simpletest\TestServiceProvider';
 
-    // Back up settings from TestBase::prepareEnvironment().
-    $settings = Settings::getAll();
     // Bootstrap a new kernel. Don't use createFromRequest so we don't mess with settings.
     $class_loader = require DRUPAL_ROOT . '/core/vendor/autoload.php';
     $this->kernel = new DrupalKernel('testing', $class_loader, FALSE);
@@ -159,10 +158,19 @@ abstract class KernelTestBase extends TestBase {
     $this->kernel->setSitePath(DrupalKernel::findSitePath($request));
     $this->kernel->boot();
 
+    // Save the original site directory path, so that extensions in the
+    // site-specific directory can still be discovered in the test site
+    // environment.
+    // @see \Drupal\Core\Extension\ExtensionDiscovery::scan()
+    $settings['test_parent_site'] = $this->originalSite;
+
     // Restore and merge settings.
     // DrupalKernel::boot() initializes new Settings, and the containerBuild()
     // method sets additional settings.
     new Settings($settings + Settings::getAll());
+
+    // Create and set new configuration directories.
+    $this->prepareConfigDirectories();
 
     // Set the request scope.
     $this->container = $this->kernel->getContainer();
@@ -203,15 +211,13 @@ abstract class KernelTestBase extends TestBase {
     if ($modules) {
       $this->enableModules($modules);
     }
-    // In order to use theme functions default theme config needs to exist.
-    \Drupal::config('system.theme')->set('default', 'stark');
 
     // Tests based on this class are entitled to use Drupal's File and
     // StreamWrapper APIs.
     // @todo Move StreamWrapper management into DrupalKernel.
     // @see https://drupal.org/node/2028109
-    file_prepare_directory($this->public_files_directory, FILE_CREATE_DIRECTORY | FILE_MODIFY_PERMISSIONS);
-    $this->settingsSet('file_public_path', $this->public_files_directory);
+    file_prepare_directory($this->publicFilesDirectory, FILE_CREATE_DIRECTORY | FILE_MODIFY_PERMISSIONS);
+    $this->settingsSet('file_public_path', $this->publicFilesDirectory);
     $this->streamWrappers = array();
     $this->registerStreamWrapper('public', 'Drupal\Core\StreamWrapper\PublicStream');
     // The temporary stream wrapper is able to operate both with and without
@@ -264,6 +270,13 @@ abstract class KernelTestBase extends TestBase {
       ->addArgument(Database::getConnection())
       ->addArgument('config');
 
+    if ($this->strictConfigSchema) {
+      $container
+        ->register('simpletest.config_schema_checker', 'Drupal\Core\Config\Testing\ConfigSchemaChecker')
+        ->addArgument(new Reference('config.typed'))
+        ->addTag('event_subscriber');
+    }
+
     $keyvalue_options = $container->getParameter('factory.keyvalue') ?: array();
     $keyvalue_options['default'] = 'keyvalue.memory';
     $container->setParameter('factory.keyvalue', $keyvalue_options);
@@ -304,6 +317,12 @@ abstract class KernelTestBase extends TestBase {
     if ($container->hasDefinition('password')) {
       $container->getDefinition('password')->setArguments(array(1));
     }
+
+    // Register the stream wrapper manager.
+    $container
+      ->register('stream_wrapper_manager', 'Drupal\Core\StreamWrapper\StreamWrapperManager')
+      ->addArgument(new Reference('module_handler'))
+      ->addMethodCall('setContainer', array(new Reference('service_container')));
 
     $request = Request::create('/');
     $container->get('request_stack')->push($request);
@@ -465,7 +484,7 @@ abstract class KernelTestBase extends TestBase {
     // Unset the list of modules in the extension handler.
     $module_handler = $this->container->get('module_handler');
     $module_filenames = $module_handler->getModuleList();
-    $extension_config = $this->container->get('config.factory')->get('core.extension');
+    $extension_config = $this->config('core.extension');
     foreach ($modules as $module) {
       unset($module_filenames[$module]);
       $extension_config->clear('module.' . $module);
@@ -495,53 +514,10 @@ abstract class KernelTestBase extends TestBase {
    *   The fully qualified class name to register.
    * @param int $type
    *   The Drupal Stream Wrapper API type. Defaults to
-   *   STREAM_WRAPPERS_LOCAL_NORMAL.
+   *   StreamWrapperInterface::NORMAL.
    */
-  protected function registerStreamWrapper($scheme, $class, $type = STREAM_WRAPPERS_LOCAL_NORMAL) {
-    if (isset($this->streamWrappers[$scheme])) {
-      $this->unregisterStreamWrapper($scheme, $this->streamWrappers[$scheme]);
-    }
-    $this->streamWrappers[$scheme] = $type;
-    if (($type & STREAM_WRAPPERS_LOCAL) == STREAM_WRAPPERS_LOCAL) {
-      stream_wrapper_register($scheme, $class);
-    }
-    else {
-      stream_wrapper_register($scheme, $class, STREAM_IS_URL);
-    }
-    // @todo Revamp Drupal's stream wrapper API for D8.
-    // @see https://drupal.org/node/2028109
-    $wrappers = &drupal_static('file_get_stream_wrappers', array());
-    $wrappers[STREAM_WRAPPERS_ALL][$scheme] = array(
-      'type' => $type,
-      'class' => $class,
-    );
-    if (($type & STREAM_WRAPPERS_WRITE_VISIBLE) == STREAM_WRAPPERS_WRITE_VISIBLE) {
-      $wrappers[STREAM_WRAPPERS_WRITE_VISIBLE][$scheme] = $wrappers[STREAM_WRAPPERS_ALL][$scheme];
-    }
-  }
-
-  /**
-   * Unregisters a stream wrapper previously registered by this test.
-   *
-   * KernelTestBase::tearDown() automatically cleans up all registered
-   * stream wrappers, so this usually does not have to be called manually.
-   *
-   * @param string $scheme
-   *   The scheme to unregister.
-   * @param int $type
-   *   The Drupal Stream Wrapper API type of the scheme to unregister.
-   */
-  protected function unregisterStreamWrapper($scheme, $type) {
-    stream_wrapper_unregister($scheme);
-    unset($this->streamWrappers[$scheme]);
-    // @todo Revamp Drupal's stream wrapper API for D8.
-    // @see https://drupal.org/node/2028109
-    $wrappers = &drupal_static('file_get_stream_wrappers', array());
-    foreach ($wrappers as $filter => $schemes) {
-      if (is_int($filter) && (($filter & $type) == $filter)) {
-        unset($wrappers[$filter][$scheme]);
-      }
-    }
+  protected function registerStreamWrapper($scheme, $class, $type = StreamWrapperInterface::NORMAL) {
+    $this->container->get('stream_wrapper_manager')->registerWrapper($scheme, $class, $type);
   }
 
   /**

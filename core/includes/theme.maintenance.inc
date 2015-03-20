@@ -23,7 +23,6 @@ function _drupal_maintenance_theme() {
     return;
   }
 
-  require_once __DIR__ . '/path.inc';
   require_once __DIR__ . '/theme.inc';
   require_once __DIR__ . '/common.inc';
   require_once __DIR__ . '/unicode.inc';
@@ -70,7 +69,7 @@ function _drupal_maintenance_theme() {
     $module_handler->load('system');
   }
 
-  $themes = list_themes();
+  $themes = \Drupal::service('theme_handler')->listInfo();
 
   // If no themes are installed yet, or if the requested custom theme is not
   // installed, retrieve all available themes.
@@ -83,10 +82,11 @@ function _drupal_maintenance_theme() {
     \Drupal::theme()->setActiveTheme($theme_init->getActiveTheme($themes[$custom_theme], array()));
   }
 
-  // list_themes() triggers a \Drupal\Core\Extension\ModuleHandler::alter() in
-  // maintenance mode, but we can't let themes alter the .info.yml data until
-  // we know a theme's base themes. So don't set active theme until after
-  // list_themes() builds its cache.
+  // \Drupal\Core\Extension\ThemeHandlerInterface::listInfo() triggers a
+  // \Drupal\Core\Extension\ModuleHandler::alter() in maintenance mode, but we
+  // can't let themes alter the .info.yml data until we know a theme's base
+  // themes. So don't set active theme until after
+  // \Drupal\Core\Extension\ThemeHandlerInterface::listInfo() builds its cache.
   $theme = $custom_theme;
 
   // Find all our ancestor themes and put them in an array.
@@ -116,7 +116,7 @@ function theme_authorize_report($variables) {
   $messages = $variables['messages'];
   $output = '';
   if (!empty($messages)) {
-    $output .= '<div id="authorize-results">';
+    $output .= '<div class="authorize-results">';
     foreach ($messages as $heading => $logs) {
       $items = array();
       foreach ($logs as $number => $log_message) {
@@ -128,7 +128,10 @@ function theme_authorize_report($variables) {
           '#message' => $log_message['message'],
           '#success' => $log_message['success'],
         );
-        $items[] = drupal_render($authorize_message);
+        $items[] = array(
+          '#markup' => drupal_render($authorize_message),
+          '#wrapper_attributes' => array('class' => $log_message['success'] ? 'authorize-results__success' : 'authorize-results__failure'),
+        );
       }
       $item_list = array(
         '#theme' => 'item_list',
@@ -156,12 +159,6 @@ function theme_authorize_report($variables) {
  */
 function theme_authorize_message($variables) {
   $message = $variables['message'];
-  $success = $variables['success'];
-  if ($success) {
-    $item = array('data' => $message, 'class' => array('success'));
-  }
-  else {
-    $item = array('data' => '<strong>' . $message . '</strong>', 'class' => array('failure'));
-  }
-  return $item;
+  $item = array('#markup' => $message);
+  return drupal_render($item);
 }

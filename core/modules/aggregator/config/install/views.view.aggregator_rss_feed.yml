@@ -1,8 +1,16 @@
-base_field: iid
-base_table: aggregator_item
-core: 8.x
-description: ''
+langcode: en
 status: true
+dependencies:
+  module:
+    - aggregator
+id: aggregator_rss_feed
+label: 'Aggregator RSS feed'
+module: aggregator
+description: ''
+tag: aggregator
+base_table: aggregator_item
+base_field: iid
+core: 8.x
 display:
   default:
     display_plugin: default
@@ -11,22 +19,20 @@ display:
     position: 0
     display_options:
       access:
-        type: none
-        options: {  }
-        provider: views
+        type: perm
+        options:
+          perm: 'access news feeds'
       cache:
         type: none
         options: {  }
-        provider: views
       query:
         type: views_query
         options:
           disable_sql_rewrite: false
           distinct: false
           replica: false
-          query_comment: false
+          query_comment: ''
           query_tags: {  }
-        provider: views
       exposed_form:
         type: basic
         options:
@@ -37,7 +43,6 @@ display:
           expose_sort_order: true
           sort_asc_label: Asc
           sort_desc_label: Desc
-        provider: views
       pager:
         type: full
         options:
@@ -59,13 +64,10 @@ display:
             first: '« first'
             last: 'last »'
           quantity: 9
-        provider: views
       style:
         type: default
-        provider: views
       row:
         type: 'entity:aggregator_item'
-        provider: views
       fields:
         iid:
           table: aggregator_item
@@ -94,7 +96,7 @@ display:
             suffix: ''
             target: ''
             nl2br: false
-            max_length: ''
+            max_length: 0
             word_boundary: true
             ellipsis: true
             more_link: false
@@ -125,6 +127,8 @@ display:
           format_plural_plural: '@count'
           prefix: ''
           suffix: ''
+          entity_type: aggregator_item
+          entity_field: iid
       filters: {  }
       sorts: {  }
       title: 'Aggregator RSS feed'
@@ -143,11 +147,3 @@ display:
       display_description: ''
       defaults:
         arguments: true
-label: 'Aggregator RSS feed'
-module: aggregator
-id: aggregator_rss_feed
-tag: aggregator
-langcode: en
-dependencies:
-  module:
-    - aggregator

@@ -140,14 +140,11 @@ class CKEditor extends EditorBase implements ContainerFactoryPluginInterface {
       '#type' => 'container',
       '#attached' => array(
         'library' => array('ckeditor/drupal.ckeditor.admin'),
-        'js' => array(
-          array(
-            'type' => 'setting',
-            'data' => array('ckeditor' => array(
-              'toolbarAdmin' => drupal_render($ckeditor_settings_toolbar),
-            )),
-          )
-        ),
+        'drupalSettings' => [
+          'ckeditor' => [
+            'toolbarAdmin' => drupal_render($ckeditor_settings_toolbar),
+          ],
+        ],
       ),
       '#attributes' => array('class' => array('ckeditor-toolbar-configuration')),
     );
@@ -218,14 +215,7 @@ class CKEditor extends EditorBase implements ContainerFactoryPluginInterface {
     $form['hidden_ckeditor'] = array(
       '#markup' => '<div id="ckeditor-hidden" class="hidden"></div>',
       '#attached' => array(
-        'js' => array(
-          array(
-            'type' => 'setting',
-            'data' => array('ckeditor' => array(
-              'hiddenCKEditorConfig' => $config,
-            )),
-          ),
-        ),
+        'drupalSettings' => ['ckeditor' => ['hiddenCKEditorConfig' => $config]],
       ),
     );
 
@@ -268,11 +258,14 @@ class CKEditor extends EditorBase implements ContainerFactoryPluginInterface {
     // Fall back on English if no matching language code was found.
     $display_langcode = 'en';
 
-    // Map the interface language code to a CKEditor translation.
-    $ckeditor_langcodes = $this->getLangcodes();
-    $language_interface = $this->languageManager->getCurrentLanguage();
-    if (isset($ckeditor_langcodes[$language_interface->id])) {
-      $display_langcode = $ckeditor_langcodes[$language_interface->id];
+    // Map the interface language code to a CKEditor translation if interface
+    // translation is enabled.
+    if ($this->moduleHandler->moduleExists('locale')) {
+      $ckeditor_langcodes = $this->getLangcodes();
+      $language_interface = $this->languageManager->getCurrentLanguage();
+      if (isset($ckeditor_langcodes[$language_interface->getId()])) {
+        $display_langcode = $ckeditor_langcodes[$language_interface->getId()];
+      }
     }
 
     // Next, set the most fundamental CKEditor settings.
@@ -323,7 +316,7 @@ class CKEditor extends EditorBase implements ContainerFactoryPluginInterface {
     if (empty($langcodes)) {
       $langcodes = array();
       // Collect languages included with CKEditor based on file listing.
-      $ckeditor_languages = new \GlobIterator(DRUPAL_ROOT . '/core/assets/vendor/ckeditor/lang/*.js');
+      $ckeditor_languages = new \GlobIterator(\Drupal::root() . '/core/assets/vendor/ckeditor/lang/*.js');
       foreach ($ckeditor_languages as $language_file) {
         $langcode = $language_file->getBasename('.js');
         $langcodes[$langcode] = $langcode;

@@ -7,8 +7,10 @@
 
 namespace Drupal\Core\Utility;
 
+use Drupal\Component\Utility\String;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\PathProcessor\OutboundPathProcessorInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
@@ -26,17 +28,27 @@ class UnroutedUrlAssembler implements UnroutedUrlAssemblerInterface {
   protected $requestStack;
 
   /**
+   * The outbound path processor.
+   *
+   * @var \Drupal\Core\PathProcessor\OutboundPathProcessorInterface
+   */
+  protected $pathProcessor;
+
+  /**
    *  Constructs a new unroutedUrlAssembler object.
    *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config
-   *    The config factory.
    * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
    *   A request stack object.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config
+   *    The config factory.
+   * @param \Drupal\Core\PathProcessor\OutboundPathProcessorInterface $path_processor
+   *   The output path processor.
    */
-  public function __construct(RequestStack $request_stack, ConfigFactoryInterface $config) {
+  public function __construct(RequestStack $request_stack, ConfigFactoryInterface $config, OutboundPathProcessorInterface $path_processor) {
     $allowed_protocols = $config->get('system.filter')->get('protocols') ?: ['http', 'https'];
     UrlHelper::setAllowedProtocols($allowed_protocols);
     $this->requestStack = $request_stack;
+    $this->pathProcessor = $path_processor;
   }
 
   /**
@@ -49,14 +61,14 @@ class UnroutedUrlAssembler implements UnroutedUrlAssemblerInterface {
     // Note that UrlHelper::isExternal will return FALSE if the $uri has a
     // disallowed protocol.  This is later made safe since we always add at
     // least a leading slash.
-    if (strpos($uri, 'base://') === 0) {
+    if (parse_url($uri, PHP_URL_SCHEME) === 'base') {
       return $this->buildLocalUrl($uri, $options);
     }
     elseif (UrlHelper::isExternal($uri)) {
       // UrlHelper::isExternal() only returns true for safe protocols.
       return $this->buildExternalUrl($uri, $options);
     }
-    throw new \InvalidArgumentException('You must use a valid URI scheme. Use base:// for a path e.g. to a Drupal file that needs the base path.');
+    throw new \InvalidArgumentException(String::format('The URI "@uri" is invalid. You must use a valid URI scheme. Use base: for a path, e.g., to a Drupal file that needs the base path. Do not use this for internal paths controlled by Drupal.', ['@uri' => $uri]));
   }
 
   /**
@@ -96,8 +108,18 @@ class UnroutedUrlAssembler implements UnroutedUrlAssemblerInterface {
     $this->addOptionDefaults($options);
     $request = $this->requestStack->getCurrentRequest();
 
-    // Remove the base:// scheme.
-    $uri = substr($uri, 7);
+    // Remove the base: scheme.
+    // @todo Consider using a class constant for this in
+    //   https://www.drupal.org/node/2417459
+    $uri = substr($uri, 5);
+
+    // Allow (outbound) path processing, if needed. A valid use case is the path
+    // alias overview form:
+    // @see \Drupal\path\Controller\PathController::adminOverview().
+    if (!empty($options['path_processing'])) {
+      $uri = $this->pathProcessor->processOutbound($uri, $options);
+    }
+
     // Add any subdirectory where Drupal is installed.
     $current_base_path = $request->getBasePath() . '/';
 
@@ -135,13 +157,29 @@ class UnroutedUrlAssembler implements UnroutedUrlAssemblerInterface {
    *   The options to merge in the defaults.
    */
   protected function addOptionDefaults(array &$options) {
+    $request = $this->requestStack->getCurrentRequest();
+    $current_base_path = $request->getBasePath() . '/';
+    $current_script_path = '';
+    $base_path_with_script = $request->getBaseUrl();
+
+    // If the current request was made with the script name (eg, index.php) in
+    // it, then extract it, making sure the leading / is gone, and a trailing /
+    // is added, to allow simple string concatenation with other parts.  This
+    // mirrors code from UrlGenerator::generateFromPath().
+    if (!empty($base_path_with_script)) {
+      $script_name = $request->getScriptName();
+      if (strpos($base_path_with_script, $script_name) !== FALSE) {
+        $current_script_path = ltrim(substr($script_name, strlen($current_base_path)), '/') . '/';
+      }
+    }
+
     // Merge in defaults.
     $options += [
       'fragment' => '',
       'query' => [],
       'absolute' => FALSE,
       'prefix' => '',
-      'script' => '',
+      'script' => $current_script_path,
     ];
 
     if (isset($options['fragment']) && $options['fragment'] !== '') {

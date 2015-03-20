@@ -22,9 +22,10 @@
 
 use Drupal\Core\DrupalKernel;
 use Drupal\Core\Url;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Drupal\Core\Site\Settings;
-use Drupal\Core\Page\DefaultHtmlPageRenderer;
 
 // Change the directory to the Drupal root.
 chdir('..');
@@ -50,13 +51,19 @@ const MAINTENANCE_MODE = 'update';
  *   TRUE if the current user can run authorize.php, and FALSE if not.
  */
 function authorize_access_allowed() {
-  \Drupal::service('session_manager')->start();
   return Settings::get('allow_authorize_operations', TRUE) && \Drupal::currentUser()->hasPermission('administer software updates');
 }
 
-$request = Request::createFromGlobals();
-$kernel = DrupalKernel::createFromRequest($request, $autoloader, 'prod');
-$kernel->prepareLegacyRequest($request);
+try {
+  $request = Request::createFromGlobals();
+  $kernel = DrupalKernel::createFromRequest($request, $autoloader, 'prod');
+  $kernel->prepareLegacyRequest($request);
+}
+catch (HttpExceptionInterface $e) {
+  $response = new Response('', $e->getStatusCode());
+  $response->prepare($request)->send();
+  exit;
+}
 
 // We have to enable the user and system modules, even to check access and
 // display errors via the maintenance theme.
@@ -68,9 +75,10 @@ $kernel->prepareLegacyRequest($request);
 // Initialize the maintenance theme for this administrative script.
 drupal_maintenance_theme();
 
-$output = '';
+$content = [];
 $show_messages = TRUE;
 
+$response = new Response();
 if (authorize_access_allowed()) {
   // Load both the Form API and Batch API.
   require_once __DIR__ . '/includes/form.inc';
@@ -98,11 +106,10 @@ if (authorize_access_allowed()) {
       drupal_set_message($results['page_message']['message'], $results['page_message']['type']);
     }
 
-    $authorize_report = array(
+    $content['authorize_report'] = array(
       '#theme' => 'authorize_report',
       '#messages' => $results['messages'],
     );
-    $output = drupal_render($authorize_report);
 
     $links = array();
     if (is_array($results['tasks'])) {
@@ -115,40 +122,45 @@ if (authorize_access_allowed()) {
       ));
     }
 
-    $item_list = array(
+    $content['next_steps'] = array(
       '#theme' => 'item_list',
       '#items' => $links,
       '#title' => t('Next steps'),
     );
-    $output .= drupal_render($item_list);
   }
   // If a batch is running, let it run.
   elseif ($request->query->has('batch')) {
-    $output = _batch_page($request);
+    $content = _batch_page($request);
+    // If _batch_page() returns a response object (likely a JsonResponse for
+    // JavaScript-based batch processing), send it immediately.
+    if ($content instanceof Response) {
+      $content->send();
+      exit;
+    }
   }
   else {
     if (empty($_SESSION['authorize_operation']) || empty($_SESSION['authorize_filetransfer_info'])) {
-      $output = t('It appears you have reached this page in error.');
+      $content = ['#markup' => t('It appears you have reached this page in error.')];
     }
     elseif (!$batch = batch_get()) {
       // We have a batch to process, show the filetransfer form.
-      $elements = \Drupal::formBuilder()->getForm('Drupal\Core\FileTransfer\Form\FileTransferAuthorizeForm');
-      $output = drupal_render($elements);
+      $content = \Drupal::formBuilder()->getForm('Drupal\Core\FileTransfer\Form\FileTransferAuthorizeForm');
     }
   }
   // We defer the display of messages until all operations are done.
   $show_messages = !(($batch = batch_get()) && isset($batch['running']));
 }
 else {
-  drupal_add_http_header('Status', '403 Forbidden');
+  $response->setStatusCode(403);
   \Drupal::logger('access denied')->warning('authorize.php');
   $page_title = t('Access denied');
-  $output = t('You are not allowed to access this page.');
+  $content = ['#markup' => t('You are not allowed to access this page.')];
 }
 
-if (!empty($output)) {
-  drupal_add_http_header('Content-Type', 'text/html; charset=utf-8');
-  print DefaultHtmlPageRenderer::renderPage($output, $page_title, 'maintenance', array(
+if (!empty($content)) {
+  $response->headers->set('Content-Type', 'text/html; charset=utf-8');
+  $response->setContent(\Drupal::service('bare_html_page_renderer')->renderBarePage($content, $page_title, 'maintenance_page', array(
     '#show_messages' => $show_messages,
-  ));
+  )));
+  $response->send();
 }

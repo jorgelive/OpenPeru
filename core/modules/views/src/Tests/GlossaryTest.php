@@ -8,6 +8,7 @@
 namespace Drupal\views\Tests;
 
 use Drupal\Component\Utility\Unicode;
+use Drupal\Core\Url;
 use Drupal\views\Views;
 
 /**
@@ -40,7 +41,7 @@ class GlossaryTest extends ViewTestBase {
     );
     foreach ($nodes_per_char as $char => $count) {
       $setting = array(
-        'type' => $type->type
+        'type' => $type->id()
       );
       for ($i = 0; $i < $count; $i++) {
         $node = $setting;
@@ -66,7 +67,7 @@ class GlossaryTest extends ViewTestBase {
     $this->assertResponse(200);
 
     foreach ($nodes_per_char as $char => $count) {
-      $href = _url('glossary/' . $char);
+      $href = Url::fromRoute('view.glossary.page_1', ['arg_0' => $char])->toString();
       $label = Unicode::strtoupper($char);
       // Get the summary link for a certain character. Filter by label and href
       // to ensure that both of them are correct.

@@ -5,12 +5,13 @@
  * Hooks provided the Entity module.
  */
 
-use Drupal\Component\Utility\String;
+use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\DynamicallyFieldableEntityStorageInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Render\Element;
+use Drupal\language\Entity\ContentLanguageSettings;
 
 /**
  * @defgroup entity_crud Entity CRUD, editing, and view hooks
@@ -149,10 +150,6 @@ use Drupal\Core\Render\Element;
  * - hook_ENTITY_TYPE_prepare_form()
  * - hook_entity_form_display_alter() (for content entities only)
  *
- * Some specific entity types have additional hooks that are run during
- * various steps in the process:
- * - Node entities: hook_node_validate() and hook_submit().
- *
  * @section delete Delete operations
  * To delete one or more entities, load them and then delete them:
  * @code
@@ -186,7 +183,7 @@ use Drupal\Core\Render\Element;
  * To make a render array for a loaded entity:
  * @code
  * // You can omit the language ID if the default language is being used.
- * $build = $view_builder->view($entity, 'view_mode_name', $language->id);
+ * $build = $view_builder->view($entity, 'view_mode_name', $language->getId());
  * @endcode
  * You can also use the viewMultiple() method to view multiple entities.
  *
@@ -326,11 +323,12 @@ use Drupal\Core\Render\Element;
  *   also need to add a corresponding route to your module's routing.yml file;
  *   see the entity.node.canonical route in node.routing.yml for an example, and see
  *   @ref sec_routes below for some notes.
- * - Define routing and links for the various URLs associated with the entity.
+ * - Define routes and links for the various URLs associated with the entity.
  *   These go into the 'links' annotation, with the link type as the key, and
- *   the route machine name (defined in your module's routing.yml file) as the
- *   value; see @ref sec_routes below for some routing notes. Typical link
- *   types are:
+ *   the path of this link template as the value. The corresponding route
+ *   requires the following route name:
+ *   "entity.$entity_type_id.$link_template_type". See @ref sec_routes below for
+ *   some routing notes. Typical link types are:
  *   - canonical: Default link, either to view (if entities are viewed on their
  *     own pages) or edit the entity.
  *   - delete-form: Confirmation form to delete the entity.
@@ -376,7 +374,7 @@ use Drupal\Core\Render\Element;
  *   the entity system will load the corresponding entity item and pass it in as
  *   an object to the controller for the route.
  * - defaults: For entity form routes, use _entity_form rather than the generic
- *   _content or _form. The value is composed of the entity type machine name
+ *   _controller or _form. The value is composed of the entity type machine name
  *   and a form controller type from the entity annotation (see @ref define
  *   above more more on controllers and annotation). So, in this example,
  *   block.default refers to the 'default' form controller on the block entity
@@ -469,7 +467,7 @@ use Drupal\Core\Render\Element;
  * Then, to build and render the entity:
  * @code
  * // You can omit the language ID if the default language is being used.
- * $build = $view_builder->view($entity, 'view_mode_name', $language->id);
+ * $build = $view_builder->view($entity, 'view_mode_name', $language->getId());
  * // $build is a render array.
  * $rendered = drupal_render($build);
  * @endcode
@@ -723,7 +721,7 @@ function hook_entity_bundle_info_alter(&$bundles) {
 function hook_entity_bundle_create($entity_type_id, $bundle) {
   // When a new bundle is created, the menu needs to be rebuilt to add the
   // Field UI menu item tabs.
-  \Drupal::service('router.builder')->setRebuildNeeded();
+  \Drupal::service('router.builder_indicator')->setRebuildNeeded();
 }
 
 /**
@@ -786,7 +784,7 @@ function hook_entity_bundle_delete($entity_type_id, $bundle) {
  * @see hook_ENTITY_TYPE_create()
  */
 function hook_entity_create(\Drupal\Core\Entity\EntityInterface $entity) {
-  if ($entity instanceof ContentEntityInterface && !$entity->foo->value) {
+  if ($entity instanceof FieldableEntityInterface && !$entity->foo->value) {
     $entity->foo->value = 'some_initial_value';
   }
 }
@@ -892,8 +890,8 @@ function hook_ENTITY_TYPE_storage_load(array $entities) {
  */
 function hook_entity_presave(Drupal\Core\Entity\EntityInterface $entity) {
  if ($entity instanceof ContentEntityInterface && $entity->isTranslatable()) {
-   $attributes = \Drupal::request()->attributes;
-   \Drupal::service('content_translation.synchronizer')->synchronizeFields($entity, $entity->language()->id, $attributes->get('source_langcode'));
+   $route_match = \Drupal::routeMatch();
+   \Drupal::service('content_translation.synchronizer')->synchronizeFields($entity, $entity->language()->getId(), $route_match->getParameter('source_langcode'));
   }
 }
 
@@ -908,8 +906,8 @@ function hook_entity_presave(Drupal\Core\Entity\EntityInterface $entity) {
  */
 function hook_ENTITY_TYPE_presave(Drupal\Core\Entity\EntityInterface $entity) {
   if ($entity->isTranslatable()) {
-    $attributes = \Drupal::request()->attributes;
-    \Drupal::service('content_translation.synchronizer')->synchronizeFields($entity, $entity->language()->id, $attributes->get('source_langcode'));
+    $route_match = \Drupal::routeMatch();
+    \Drupal::service('content_translation.synchronizer')->synchronizeFields($entity, $entity->language()->getId(), $route_match->getParameter('source_langcode'));
   }
 }
 
@@ -1755,7 +1753,7 @@ function hook_entity_field_storage_info(\Drupal\Core\Entity\EntityTypeInterface 
       ->condition('id', $entity_type->id() . '.', 'STARTS_WITH')
       ->execute();
     // Fetch all fields and key them by field name.
-    $field_storages = entity_load_multiple('field_storage_config', $ids);
+    $field_storages = FieldStorageConfig::loadMultiple($ids);
     $result = array();
     foreach ($field_storages as $field_storage) {
       $result[$field_storage->getName()] = $field_storage;
@@ -1911,8 +1909,8 @@ function hook_entity_extra_field_info() {
     // Visibility of the ordering of the language selector is the same as on the
     // node/add form.
     if ($module_language_enabled) {
-      $configuration = language_get_default_configuration('node', $bundle->type);
-      if ($configuration['language_show']) {
+      $configuration = ContentLanguageSettings::loadByEntityTypeBundle('node', $bundle->type);
+      if ($configuration->isLanguageAlterable()) {
         $extra['node'][$bundle->type]['form']['language'] = array(
           'label' => t('Language'),
           'description' => $description,
@@ -1948,3 +1946,7 @@ function hook_entity_extra_field_info_alter(&$info) {
     }
   }
 }
+
+/**
+ * @} End of "addtogroup hooks".
+ */

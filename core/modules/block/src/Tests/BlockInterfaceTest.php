@@ -8,7 +8,7 @@
 namespace Drupal\block\Tests;
 
 use Drupal\Core\Form\FormState;
-use Drupal\simpletest\DrupalUnitTestBase;
+use Drupal\simpletest\KernelTestBase;
 use Drupal\block\BlockInterface;
 
 /**
@@ -16,7 +16,7 @@ use Drupal\block\BlockInterface;
  *
  * @group block
  */
-class BlockInterfaceTest extends DrupalUnitTestBase {
+class BlockInterfaceTest extends KernelTestBase {
   public static $modules = array('system', 'block', 'block_test', 'user');
 
   /**
@@ -39,7 +39,6 @@ class BlockInterfaceTest extends DrupalUnitTestBase {
       'label' => 'Custom Display Message',
     );
     $expected_configuration = array(
-      'visibility' => array(),
       'id' => 'test_block_instantiation',
       'label' => 'Custom Display Message',
       'provider' => 'block_test',
@@ -66,7 +65,8 @@ class BlockInterfaceTest extends DrupalUnitTestBase {
     $period[0] = '<' . t('no caching') . '>';
     $period[\Drupal\Core\Cache\Cache::PERMANENT] = t('Forever');
     $contexts = \Drupal::service("cache_contexts")->getLabels();
-    unset($contexts['cache_context.theme']);
+    unset($contexts['theme']);
+    unset($contexts['language']);
     $expected_form = array(
       'provider' => array(
         '#type' => 'value',
@@ -103,7 +103,7 @@ class BlockInterfaceTest extends DrupalUnitTestBase {
         'contexts' => array(
           '#type' => 'checkboxes',
           '#title' => t('Vary by context'),
-          '#description' => t('The contexts this cached block must be varied by.'),
+          '#description' => t('The contexts this cached block must be varied by. <em>All</em> blocks are varied by language and theme.'),
           '#default_value' => array(),
           '#options' => $contexts,
           '#states' => array(

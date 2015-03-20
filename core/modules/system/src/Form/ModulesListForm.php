@@ -9,11 +9,13 @@ namespace Drupal\system\Form;
 
 use Drupal\Component\Utility\String;
 use Drupal\Component\Utility\Unicode;
+use Drupal\Core\Config\PreExistingConfigException;
 use Drupal\Core\Controller\TitleResolverInterface;
 use Drupal\Core\Access\AccessManagerInterface;
 use Drupal\Core\Entity\EntityManagerInterface;
 use Drupal\Core\Extension\Extension;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Extension\ModuleInstallerInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreExpirableInterface;
@@ -22,6 +24,7 @@ use Drupal\Core\Render\Element;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Routing\RouteProviderInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -92,11 +95,19 @@ class ModulesListForm extends FormBase {
   protected $menuLinkManager;
 
   /**
+   * The module installer.
+   *
+   * @var \Drupal\Core\Extension\ModuleInstallerInterface
+   */
+  protected $moduleInstaller;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('module_handler'),
+      $container->get('module_installer'),
       $container->get('keyvalue.expirable')->get('module_list'),
       $container->get('access_manager'),
       $container->get('entity.manager'),
@@ -113,6 +124,8 @@ class ModulesListForm extends FormBase {
    *
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler.
+   * @param \Drupal\Core\Extension\ModuleInstallerInterface $module_installer
+   *   The module installer.
    * @param \Drupal\Core\KeyValueStore\KeyValueStoreExpirableInterface $key_value_expirable
    *   The key value expirable factory.
    * @param \Drupal\Core\Access\AccessManagerInterface $access_manager
@@ -130,8 +143,9 @@ class ModulesListForm extends FormBase {
    * @param \Drupal\Core\Menu\MenuLinkManagerInterface $menu_link_manager
    *   The menu link manager.
    */
-  public function __construct(ModuleHandlerInterface $module_handler, KeyValueStoreExpirableInterface $key_value_expirable, AccessManagerInterface $access_manager, EntityManagerInterface $entity_manager, AccountInterface $current_user,  RouteMatchInterface $route_match, TitleResolverInterface $title_resolver, RouteProviderInterface $route_provider, MenuLinkManagerInterface $menu_link_manager) {
+  public function __construct(ModuleHandlerInterface $module_handler, ModuleInstallerInterface $module_installer, KeyValueStoreExpirableInterface $key_value_expirable, AccessManagerInterface $access_manager, EntityManagerInterface $entity_manager, AccountInterface $current_user,  RouteMatchInterface $route_match, TitleResolverInterface $title_resolver, RouteProviderInterface $route_provider, MenuLinkManagerInterface $menu_link_manager) {
     $this->moduleHandler = $module_handler;
+    $this->moduleInstaller = $module_installer;
     $this->keyValueExpirable = $key_value_expirable;
     $this->accessManager = $access_manager;
     $this->entityManager = $entity_manager;
@@ -258,7 +272,7 @@ class ModulesListForm extends FormBase {
         $row['links']['help'] = array(
           '#type' => 'link',
           '#title' => $this->t('Help'),
-          '#href' => 'admin/help/' . $module->getName(),
+          '#url' => Url::fromRoute('help.page', ['name' => $module->getName()]),
           '#options' => array('attributes' => array('class' =>  array('module-link', 'module-link-help'), 'title' => $this->t('Help'))),
         );
       }
@@ -270,7 +284,7 @@ class ModulesListForm extends FormBase {
       $row['links']['permissions'] = array(
         '#type' => 'link',
         '#title' => $this->t('Permissions'),
-        '#href' => 'admin/people/permissions',
+        '#url' => Url::fromRoute('user.admin_permissions'),
         '#options' => array('fragment' => 'module-' . $module->getName(), 'attributes' => array('class' => array('module-link', 'module-link-permissions'), 'title' => $this->t('Configure permissions'))),
       );
     }
@@ -301,8 +315,7 @@ class ModulesListForm extends FormBase {
         $row['links']['configure'] = array(
           '#type' => 'link',
           '#title' => $this->t('Configure'),
-          '#route_name' => $module->info['configure'],
-          '#route_parameters' => $route_parameters,
+          '#url' => Url::fromRoute($module->info['configure'], $route_parameters),
           '#options' => array(
             'attributes' => array(
               'class' => array('module-link', 'module-link-configure'),
@@ -505,13 +518,29 @@ class ModulesListForm extends FormBase {
 
     // There seem to be no dependencies that would need approval.
     if (!empty($modules['install'])) {
-      $this->moduleHandler->install(array_keys($modules['install']));
+      try {
+        $this->moduleInstaller->install(array_keys($modules['install']));
+      }
+      catch (PreExistingConfigException $e) {
+        $config_objects = $e->flattenConfigObjects($e->getConfigObjects());
+        drupal_set_message(
+          $this->formatPlural(
+            count($config_objects),
+            'Unable to install @extension, %config_names already exists in active configuration.',
+            'Unable to install @extension, %config_names already exist in active configuration.',
+            array(
+              '%config_names' => implode(', ', $config_objects),
+              '@extension' => $modules['install'][$e->getExtension()]
+            )),
+          'error'
+        );
+        return;
+      }
     }
 
     // Gets module list after install process, flushes caches and displays a
     // message if there are changes.
     if ($before != $this->moduleHandler->getModuleList()) {
-      drupal_flush_all_caches();
       drupal_set_message(t('The configuration options have been saved.'));
     }
   }

@@ -15,26 +15,46 @@ use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Validator\Constraints\Expression;
 use Symfony\Component\Validator\Constraints\ExpressionValidator;
 use Symfony\Component\Validator\Tests\Fixtures\Entity;
+use Symfony\Component\Validator\Validation;
 
 class ExpressionValidatorTest extends AbstractConstraintValidatorTest
 {
+    protected function getApiVersion()
+    {
+        return Validation::API_VERSION_2_5;
+    }
+
     protected function createValidator()
     {
         return new ExpressionValidator(PropertyAccess::createPropertyAccessor());
     }
 
-    public function testNullIsValid()
+    public function testExpressionIsEvaluatedWithNullValue()
     {
-        $this->validator->validate(null, new Expression('value == 1'));
+        $constraint = new Expression(array(
+            'expression' => 'false',
+            'message' => 'myMessage',
+        ));
 
-        $this->assertNoViolation();
+        $this->validator->validate(null, $constraint);
+
+        $this->buildViolation('myMessage')
+            ->setParameter('{{ value }}', 'null')
+            ->assertRaised();
     }
 
-    public function testEmptyStringIsValid()
+    public function testExpressionIsEvaluatedWithEmptyStringValue()
     {
-        $this->validator->validate('', new Expression('value == 1'));
+        $constraint = new Expression(array(
+            'expression' => 'false',
+            'message' => 'myMessage',
+        ));
 
-        $this->assertNoViolation();
+        $this->validator->validate('', $constraint);
+
+        $this->buildViolation('myMessage')
+            ->setParameter('{{ value }}', '""')
+            ->assertRaised();
     }
 
     public function testSucceedingExpressionAtObjectLevel()
@@ -65,7 +85,9 @@ class ExpressionValidatorTest extends AbstractConstraintValidatorTest
 
         $this->validator->validate($object, $constraint);
 
-        $this->assertViolation('myMessage');
+        $this->buildViolation('myMessage')
+            ->setParameter('{{ value }}', 'object')
+            ->assertRaised();
     }
 
     public function testSucceedingExpressionAtPropertyLevel()
@@ -100,7 +122,10 @@ class ExpressionValidatorTest extends AbstractConstraintValidatorTest
 
         $this->validator->validate('2', $constraint);
 
-        $this->assertViolation('myMessage', array(), 'data');
+        $this->buildViolation('myMessage')
+            ->setParameter('{{ value }}', '"2"')
+            ->atPath('data')
+            ->assertRaised();
     }
 
     public function testSucceedingExpressionAtNestedPropertyLevel()
@@ -141,7 +166,10 @@ class ExpressionValidatorTest extends AbstractConstraintValidatorTest
 
         $this->validator->validate('2', $constraint);
 
-        $this->assertViolation('myMessage', array(), 'reference.data');
+        $this->buildViolation('myMessage')
+            ->setParameter('{{ value }}', '"2"')
+            ->atPath('reference.data')
+            ->assertRaised();
     }
 
     /**
@@ -178,6 +206,9 @@ class ExpressionValidatorTest extends AbstractConstraintValidatorTest
 
         $this->validator->validate('2', $constraint);
 
-        $this->assertViolation('myMessage', array(), '');
+        $this->buildViolation('myMessage')
+            ->setParameter('{{ value }}', '"2"')
+            ->atPath('')
+            ->assertRaised();
     }
 }

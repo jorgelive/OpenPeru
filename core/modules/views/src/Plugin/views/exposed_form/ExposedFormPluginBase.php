@@ -43,13 +43,13 @@ abstract class ExposedFormPluginBase extends PluginBase {
 
   protected function defineOptions() {
     $options = parent::defineOptions();
-    $options['submit_button'] = array('default' => 'Apply', 'translatable' => TRUE);
-    $options['reset_button'] = array('default' => FALSE, 'bool' => TRUE);
-    $options['reset_button_label'] = array('default' => 'Reset', 'translatable' => TRUE);
-    $options['exposed_sorts_label'] = array('default' => 'Sort by', 'translatable' => TRUE);
-    $options['expose_sort_order'] = array('default' => TRUE, 'bool' => TRUE);
-    $options['sort_asc_label'] = array('default' => 'Asc', 'translatable' => TRUE);
-    $options['sort_desc_label'] = array('default' => 'Desc', 'translatable' => TRUE);
+    $options['submit_button'] = array('default' => 'Apply');
+    $options['reset_button'] = array('default' => FALSE);
+    $options['reset_button_label'] = array('default' => 'Reset');
+    $options['exposed_sorts_label'] = array('default' => 'Sort by');
+    $options['expose_sort_order'] = array('default' => TRUE);
+    $options['sort_asc_label'] = array('default' => 'Asc');
+    $options['sort_desc_label'] = array('default' => 'Desc');
     return $options;
   }
 
@@ -267,7 +267,7 @@ abstract class ExposedFormPluginBase extends PluginBase {
       $all_exposed = array_merge($exposed_sorts, $exposed_filters);
 
       // Set the access to FALSE if there is no exposed input.
-      if (!array_intersect_key($all_exposed, $this->view->exposed_input)) {
+      if (!array_intersect_key($all_exposed, $this->view->getExposedInput())) {
         $form['actions']['reset']['#access'] = FALSE;
       }
     }
@@ -327,6 +327,9 @@ abstract class ExposedFormPluginBase extends PluginBase {
       $form_state->setRebuild();
       $this->view->exposed_data = array();
     }
+
+    $form_state->setRedirect('<current>');
+    $form_state->setValues([]);
   }
 
 }

@@ -101,6 +101,13 @@ abstract class HandlerBase extends PluginBase implements ViewsHandlerInterface {
 
   /**
    * Constructs a Handler object.
+   *
+   * @param array $configuration
+   *   A configuration array containing information about the plugin instance.
+   * @param string $plugin_id
+   *   The plugin_id for the plugin instance.
+   * @param mixed $plugin_definition
+   *   The plugin implementation definition.
    */
   public function __construct(array $configuration, $plugin_id, $plugin_definition) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
@@ -164,8 +171,7 @@ abstract class HandlerBase extends PluginBase implements ViewsHandlerInterface {
     $options['field'] = array('default' => '');
     $options['relationship'] = array('default' => 'none');
     $options['group_type'] = array('default' => 'group');
-    $options['admin_label'] = array('default' => '', 'translatable' => TRUE);
-    $options['dependencies'] = array('default' => array());
+    $options['admin_label'] = array('default' => '');
 
     return $options;
   }
@@ -703,7 +709,9 @@ abstract class HandlerBase extends PluginBase implements ViewsHandlerInterface {
     // If the user has configured a relationship on the handler take that into
     // account.
     if (!empty($this->options['relationship']) && $this->options['relationship'] != 'none') {
-      $views_data = $this->getViewsData()->get($this->view->relationship->table);
+      $relationship = $this->displayHandler->getOption('relationships')[$this->options['relationship']];
+      $table_data = $this->getViewsData()->get($relationship['table']);
+      $views_data = $this->getViewsData()->get($table_data[$relationship['field']]['relationship']['base']);
     }
     else {
       $views_data = $this->getViewsData()->get($this->view->storage->get('base_table'));

@@ -14,6 +14,12 @@ use Drupal\migrate\Plugin\MigrateIdMapInterface;
 
 /**
  * Sources whose data may be fetched via DBTNG.
+ *
+ * By default, an existing database connection with key 'migrate' and target
+ * 'default' is used. These may be overridden with explicit 'key' and/or
+ * 'target' configuration keys. In addition, if the configuration key 'database'
+ * is present, it is used as a database connection information array to define
+ * the connection.
  */
 abstract class SqlBase extends SourcePluginBase {
 
@@ -57,7 +63,22 @@ abstract class SqlBase extends SourcePluginBase {
    */
   public function getDatabase() {
     if (!isset($this->database)) {
-      $this->database = Database::getConnection('default', 'migrate');
+      if (isset($this->configuration['target'])) {
+        $target = $this->configuration['target'];
+      }
+      else {
+        $target = 'default';
+      }
+      if (isset($this->configuration['key'])) {
+        $key = $this->configuration['key'];
+      }
+      else {
+        $key = 'migrate';
+      }
+      if (isset($this->configuration['database'])) {
+        Database::addConnectionInfo($key, $target, $this->configuration['database']);
+      }
+      $this->database = Database::getConnection($target, $key);
     }
     return $this->database;
   }
@@ -142,10 +163,11 @@ abstract class SqlBase extends SourcePluginBase {
           $map_key = 'sourceid' . $count;
           $this->query->addField($alias, $map_key, "migrate_map_$map_key");
         }
-        $n = count($this->migration->get('destinationIds'));
-        for ($count = 1; $count <= $n; $count++) {
-          $map_key = 'destid' . $count++;
-          $this->query->addField($alias, $map_key, "migrate_map_$map_key");
+        if ($n = count($this->migration->get('destinationIds'))) {
+          for ($count = 1; $count <= $n; $count++) {
+            $map_key = 'destid' . $count++;
+            $this->query->addField($alias, $map_key, "migrate_map_$map_key");
+          }
         }
         $this->query->addField($alias, 'source_row_status', 'migrate_map_source_row_status');
       }
@@ -193,6 +215,15 @@ abstract class SqlBase extends SourcePluginBase {
     return $this->iterator;
   }
 
+  /**
+   * Check if we can join against the map table.
+   *
+   * This function specifically catches issues when we're migrating with
+   * unique sets of credentials for the source and destination database.
+   *
+   * @return bool
+   *   TRUE if we can join against the map table otherwise FALSE.
+   */
   protected function mapJoinable() {
     if (!$this->getIds()) {
       return FALSE;
@@ -212,4 +243,5 @@ abstract class SqlBase extends SourcePluginBase {
     }
     return TRUE;
   }
+
 }

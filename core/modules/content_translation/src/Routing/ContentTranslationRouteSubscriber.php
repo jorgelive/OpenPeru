@@ -42,21 +42,30 @@ class ContentTranslationRouteSubscriber extends RouteSubscriberBase {
   protected function alterRoutes(RouteCollection $collection) {
     foreach ($this->contentTranslationManager->getSupportedEntityTypes() as $entity_type_id => $entity_type) {
       // Try to get the route from the current collection.
-      if (!$entity_route = $collection->get($entity_type->getLinkTemplate('canonical'))) {
-        continue;
+      $link_template = $entity_type->getLinkTemplate('canonical');
+      if (strpos($link_template, '/') !== FALSE) {
+        $base_path = '/' . $link_template;
       }
-      $path = $entity_route->getPath() . '/translations';
+      else {
+        if (!$entity_route = $collection->get("entity.$entity_type_id.canonical")) {
+          continue;
+        }
+        $base_path = $entity_route->getPath();
+      }
 
       // Inherit admin route status from edit route, if exists.
       $is_admin = FALSE;
-      if ($edit_route = $collection->get($entity_type->getLinkTemplate('edit-form'))) {
+      $route_name = "entity.$entity_type_id.edit_form";
+      if ($edit_route = $collection->get($route_name)) {
         $is_admin = (bool) $edit_route->getOption('_admin_route');
       }
+
+      $path = $base_path . '/translations';
 
       $route = new Route(
         $path,
         array(
-          '_content' => '\Drupal\content_translation\Controller\ContentTranslationController::overview',
+          '_controller' => '\Drupal\content_translation\Controller\ContentTranslationController::overview',
           'entity_type_id' => $entity_type_id,
         ),
         array(
@@ -71,12 +80,13 @@ class ContentTranslationRouteSubscriber extends RouteSubscriberBase {
           '_admin_route' => $is_admin,
         )
       );
-      $collection->add($entity_type->getLinkTemplate('drupal:content-translation-overview'), $route);
+      $route_name = "entity.$entity_type_id.content_translation_overview";
+      $collection->add($route_name, $route);
 
       $route = new Route(
         $path . '/add/{source}/{target}',
         array(
-          '_content' => '\Drupal\content_translation\Controller\ContentTranslationController::add',
+          '_controller' => '\Drupal\content_translation\Controller\ContentTranslationController::add',
           'source' => NULL,
           'target' => NULL,
           '_title' => 'Add',
@@ -108,7 +118,7 @@ class ContentTranslationRouteSubscriber extends RouteSubscriberBase {
       $route = new Route(
         $path . '/edit/{language}',
         array(
-          '_content' => '\Drupal\content_translation\Controller\ContentTranslationController::edit',
+          '_controller' => '\Drupal\content_translation\Controller\ContentTranslationController::edit',
           'language' => NULL,
           '_title' => 'Edit',
           'entity_type_id' => $entity_type_id,

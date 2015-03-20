@@ -18,15 +18,15 @@ settings:
   alt_field_required: false
   title_field_required: false
   default_image:
-    fid: null
+    uuid: null
     alt: ''
     title: ''
     width: null
     height: null
 status: true
-langcode: und
+langcode: en
 field_type: image
 dependencies:
-  entity:
+  config:
     - field.storage.node.field_image
     - node.type.article

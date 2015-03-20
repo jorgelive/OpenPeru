@@ -7,6 +7,7 @@
 
 namespace Drupal\taxonomy\Tests;
 
+use Drupal\Component\Utility\Unicode;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\simpletest\WebTestBase;
 use Drupal\taxonomy\Entity\Vocabulary;
@@ -21,10 +22,14 @@ abstract class TaxonomyTestBase extends WebTestBase {
    *
    * @var array
    */
-  public static $modules = array('taxonomy');
+  public static $modules = array('taxonomy', 'block');
 
+  /**
+   * {@inheritdoc}
+   */
   protected function setUp() {
     parent::setUp();
+    $this->drupalPlaceBlock('system_breadcrumb_block');
 
     // Create Basic page and Article node types.
     if ($this->profile != 'standard') {
@@ -40,7 +45,7 @@ abstract class TaxonomyTestBase extends WebTestBase {
     $vocabulary = entity_create('taxonomy_vocabulary', array(
       'name' => $this->randomMachineName(),
       'description' => $this->randomMachineName(),
-      'vid' => drupal_strtolower($this->randomMachineName()),
+      'vid' => Unicode::strtolower($this->randomMachineName()),
       'langcode' => LanguageInterface::LANGCODE_NOT_SPECIFIED,
       'weight' => mt_rand(0, 10),
     ));
@@ -68,7 +73,7 @@ abstract class TaxonomyTestBase extends WebTestBase {
       'description' => array(
         'value' => $this->randomMachineName(),
         // Use the first available text format.
-        'format' => $format->format,
+        'format' => $format->id(),
       ),
       'vid' => $vocabulary->id(),
       'langcode' => LanguageInterface::LANGCODE_NOT_SPECIFIED,

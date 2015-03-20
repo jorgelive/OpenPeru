@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Contains \Drupal\file\Plugin\field\formatter\GenericFileFormatter.
+ * Contains \Drupal\file\Plugin\Field\FieldFormatter\GenericFileFormatter.
  */
 
 namespace Drupal\file\Plugin\Field\FieldFormatter;
@@ -44,6 +44,11 @@ class GenericFileFormatter extends FileFormatterBase {
           unset($item->_attributes);
         }
       }
+    }
+    if (!empty($elements)) {
+      $elements['#attached'] = array(
+        'library' => array('file/drupal.file.formatter.generic'),
+      );
     }
 
     return $elements;

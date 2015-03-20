@@ -7,6 +7,7 @@
 
 namespace Drupal\options\Plugin\Field\FieldType;
 
+use Drupal\Component\Utility\Unicode;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\TypedData\DataDefinition;
 
@@ -29,7 +30,8 @@ class ListStringItem extends ListItemBase {
   public static function propertyDefinitions(FieldStorageDefinitionInterface $field_definition) {
     $properties['value'] = DataDefinition::create('string')
       ->setLabel(t('Text value'))
-      ->addConstraint('Length', array('max' => 255));
+      ->addConstraint('Length', array('max' => 255))
+      ->setRequired(TRUE);
 
     return $properties;
   }
@@ -43,7 +45,6 @@ class ListStringItem extends ListItemBase {
         'value' => array(
           'type' => 'varchar',
           'length' => 255,
-          'not null' => FALSE,
         ),
       ),
       'indexes' => array(
@@ -68,7 +69,7 @@ class ListStringItem extends ListItemBase {
    * {@inheritdoc}
    */
   protected static function validateAllowedValue($option) {
-    if (drupal_strlen($option) > 255) {
+    if (Unicode::strlen($option) > 255) {
       return t('Allowed values list: each key must be a string at most 255 characters long.');
     }
   }

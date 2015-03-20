@@ -9,6 +9,7 @@ namespace Drupal\views\Tests\Wizard;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\Component\Utility\String;
+use Drupal\Core\Url;
 use Drupal\views\Views;
 
 /**
@@ -74,7 +75,9 @@ class BasicTest extends WizardTestBase {
     $this->assertText($node2->label());
 
     // Check if we have the feed.
-    $this->assertLinkByHref(_url($view2['page[feed_properties][path]']));
+    $this->assertLinkByHref(Url::fromRoute('view.' . $view2['id'] . '.feed_1')->toString());
+    $elements = $this->cssSelect('link[href="' . Url::fromRoute('view.' . $view2['id'] . '.feed_1', [], ['absolute' => TRUE])->toString() . '"]');
+    $this->assertEqual(count($elements), 1, 'Feed found.');
     $this->drupalGet($view2['page[feed_properties][path]']);
     $this->assertRaw('<rss version="2.0"');
     // The feed should have the same title and nodes as the page.
@@ -88,7 +91,7 @@ class BasicTest extends WizardTestBase {
     $this->drupalGet('admin/structure/views');
     $this->assertText($view2['label']);
     $this->assertText($view2['description']);
-    $this->assertLinkByHref(_url($view2['page[path]']));
+    $this->assertLinkByHref(Url::fromRoute('view.' . $view2['id'] . '.page_1')->toString());
 
     // The view should not have a REST export display.
     $this->assertNoText('REST export', 'If only the page option was enabled in the wizard, the resulting view does not have a REST export display.');
@@ -123,13 +126,13 @@ class BasicTest extends WizardTestBase {
     $this->drupalGet('admin/structure/views');
     $this->assertText($view3['label']);
     $this->assertText($view3['description']);
-    $this->assertLinkByHref(_url($view3['page[path]']));
+    $this->assertLinkByHref(Url::fromRoute('view.' . $view3['id'] . '.page_1')->toString());
 
     // The view should not have a REST export display.
     $this->assertNoText('REST export', 'If only the page and block options were enabled in the wizard, the resulting view does not have a REST export display.');
 
     // Confirm that the block is available in the block administration UI.
-    $this->drupalGet('admin/structure/block/list/' . \Drupal::config('system.theme')->get('default'));
+    $this->drupalGet('admin/structure/block/list/' . $this->config('system.theme')->get('default'));
     $this->assertText($view3['label']);
 
     // Place the block.
@@ -203,11 +206,8 @@ class BasicTest extends WizardTestBase {
     $displays = $view->storage->get('display');
 
     foreach ($displays as $display) {
-      $this->assertIdentical($display['provider'], 'views', 'Expected provider found for display.');
-
       foreach (array('query', 'exposed_form', 'pager', 'style', 'row') as $type) {
         $this->assertFalse(empty($display['display_options'][$type]['options']), String::format('Default options found for @plugin.', array('@plugin' => $type)));
-        $this->assertIdentical($display['display_options'][$type]['provider'], 'views', String::format('Expected provider found for @plugin.', array('@plugin' => $type)));
       }
     }
   }

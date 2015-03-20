@@ -17,7 +17,7 @@ use Drupal\simpletest\WebTestBase;
 class BlockHtmlTest extends WebTestBase {
 
   /**
-   * Modules to enable.
+   * Modules to install.
    *
    * @var array
    */
@@ -26,7 +26,7 @@ class BlockHtmlTest extends WebTestBase {
   protected function setUp() {
     parent::setUp();
 
-    $this->drupalLogin($this->root_user);
+    $this->drupalLogin($this->rootUser);
 
     // Enable the test_html block, to test HTML ID and attributes.
     \Drupal::state()->set('block_test.attributes', array('data-custom-attribute' => 'foo'));

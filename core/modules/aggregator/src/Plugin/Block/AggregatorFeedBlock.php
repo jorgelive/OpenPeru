@@ -164,15 +164,16 @@ class AggregatorFeedBlock extends BlockBase implements ContainerFactoryPluginInt
 
       $more_link = array(
         '#type' => 'more_link',
-        '#href' => 'aggregator/sources/' . $feed->id(),
+        '#url' => $feed->urlInfo(),
         '#attributes' => array('title' => $this->t("View this feed's recent news.")),
       );
       $read_more = drupal_render($more_link);
       $rendered_items = array();
       foreach ($items as $item) {
         $aggregator_block_item = array(
-          '#theme' => 'aggregator_block_item',
-          '#item' => $item,
+          '#type' => 'link',
+          '#href' => $item->getLink(),
+          '#title' => $item->label(),
         );
         $rendered_items[] = drupal_render($aggregator_block_item);
       }
@@ -195,7 +196,7 @@ class AggregatorFeedBlock extends BlockBase implements ContainerFactoryPluginInt
   public function getCacheTags() {
     $cache_tags = parent::getCacheTags();
     $feed = $this->feedStorage->load($this->configuration['feed']);
-    return Cache::mergeTags($cache_tags, $feed->getCacheTag());
+    return Cache::mergeTags($cache_tags, $feed->getCacheTags());
   }
 
 }

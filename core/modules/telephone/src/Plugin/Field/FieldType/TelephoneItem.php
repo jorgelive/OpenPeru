@@ -20,7 +20,7 @@ use Drupal\Core\TypedData\DataDefinition;
  *   label = @Translation("Telephone number"),
  *   description = @Translation("This field stores a telephone number in the database."),
  *   default_widget = "telephone_default",
- *   default_formatter = "string"
+ *   default_formatter = "basic_string"
  * )
  */
 class TelephoneItem extends FieldItemBase {
@@ -34,7 +34,6 @@ class TelephoneItem extends FieldItemBase {
         'value' => array(
           'type' => 'varchar',
           'length' => 256,
-          'not null' => FALSE,
         ),
       ),
     );
@@ -45,7 +44,8 @@ class TelephoneItem extends FieldItemBase {
    */
   public static function propertyDefinitions(FieldStorageDefinitionInterface $field_definition) {
     $properties['value'] = DataDefinition::create('string')
-      ->setLabel(t('Telephone number'));
+      ->setLabel(t('Telephone number'))
+      ->setRequired(TRUE);
 
     return $properties;
   }

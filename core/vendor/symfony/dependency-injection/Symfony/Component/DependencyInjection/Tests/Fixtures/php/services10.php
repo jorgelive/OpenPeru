@@ -16,6 +16,9 @@ use Symfony\Component\DependencyInjection\ParameterBag\FrozenParameterBag;
  */
 class ProjectServiceContainer extends Container
 {
+    private $parameters;
+    private $targetDirs = array();
+
     /**
      * Constructor.
      */
@@ -36,6 +39,14 @@ class ProjectServiceContainer extends Container
         );
 
         $this->aliases = array();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function compile()
+    {
+        throw new LogicException('You cannot compile a dumped frozen container.');
     }
 
     /**
@@ -94,6 +105,7 @@ class ProjectServiceContainer extends Container
 
         return $this->parameterBag;
     }
+
     /**
      * Gets the default parameters.
      *

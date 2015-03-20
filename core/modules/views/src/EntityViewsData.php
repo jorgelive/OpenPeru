@@ -127,8 +127,8 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
     $revision_field = $this->entityType->getKey('revision');
 
     // Setup base information of the views data.
-    $data[$base_table]['table']['entity type'] = $this->entityType->id();
     $data[$base_table]['table']['group'] = $this->entityType->getLabel();
+    $data[$base_table]['table']['provider'] = $this->entityType->getProvider();
     $data[$base_table]['table']['base'] = [
       'field' => $base_field,
       'title' => $this->entityType->getLabel(),
@@ -148,6 +148,14 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
       }
     }
 
+    $data[$base_table]['operations'] = array(
+      'field' => array(
+        'title' => $this->t('Operations links'),
+        'help' => $this->t('Provides links to perform entity operations.'),
+        'id' => 'entity_operations',
+      ),
+    );
+
     // Setup relations to the revisions/property data.
     if ($data_table) {
       $data[$data_table]['table']['join'][$base_table] = [
@@ -155,12 +163,12 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
         'field' => $base_field,
         'type' => 'INNER'
       ];
-      $data[$data_table]['table']['entity type'] = $this->entityType->id();
       $data[$data_table]['table']['group'] = $this->entityType->getLabel();
+      $data[$data_table]['table']['provider'] = $this->entityType->getProvider();
     }
     if ($revision_table) {
-      $data[$revision_table]['table']['entity type'] = $this->entityType->id();
       $data[$revision_table]['table']['group'] = $this->t('@entity_type revision', ['@entity_type' => $this->entityType->getLabel()]);
+      $data[$revision_table]['table']['provider'] = $this->entityType->getProvider();
       $data[$revision_table]['table']['base'] = array(
         'field' => $revision_field,
         'title' => $this->t('@entity_type revisions', array('@entity_type' => $this->entityType->getLabel())),
@@ -173,7 +181,6 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
       );
 
       if ($revision_data_table) {
-        $data[$revision_data_table]['table']['entity type'] = $this->entityType->id();
         $data[$revision_data_table]['table']['group'] = $this->t('@entity_type revision', ['@entity_type' => $this->entityType->getLabel()]);
 
         $data[$revision_data_table]['table']['join'][$revision_table] = array(
@@ -201,6 +208,12 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
       }
     }
 
+    // Add the entity type key to each table generated.
+    $entity_type_id = $this->entityType->id();
+    array_walk($data, function(&$table_data) use ($entity_type_id){
+      $table_data['table']['entity type'] = $entity_type_id;
+    });
+
     return $data;
   }
 
@@ -225,23 +238,19 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
     $field_schema = $this->getFieldStorageDefinitions()[$field_name]->getSchema();
 
     $field_definition_type = $field_definition->getType();
-    // Add all properties to views table data.
+    // Add all properties to views table data. We need an entry for each
+    // column of each field, with the first one given special treatment.
+    // @todo Introduce concept of the "main" column for a field, rather than
+    //   assuming the first one is the main column. See also what the
+    //   mapSingleFieldViewsData() method does with $first.
+    $multiple = (count($field_column_mapping) > 1);
     $first = TRUE;
     foreach ($field_column_mapping as $field_column_name => $schema_field_name) {
-      $schema = $field_schema['columns'][$field_column_name];
-      // We want to both have an entry in the views data for the actual field,
-      // but also each additional schema field, for example the file
-      // description.
-      // @todo Introduce a concept of the "main" schema field for a field item.
-      //   This would be the FID for a file reference for example.
-      // @see https://www.drupal.org/node/2337517
-      if ($first) {
-        $first = FALSE;
-        $table_data[$field_name] = $this->mapSingleFieldViewsData($table, $field_definition_type, $schema_field_name, $field_definition, TRUE);
-      }
-      else {
-        $table_data["$field_name.$field_column_name"] = $this->mapSingleFieldViewsData($table, $schema['type'], $schema_field_name, $field_definition, FALSE);
-      }
+      $views_field_name = ($multiple) ? $field_name . '__' . $field_column_name : $field_name;
+      $table_data[$views_field_name] = $this->mapSingleFieldViewsData($table, $field_name, $field_definition_type, $field_column_name, $field_schema['columns'][$field_column_name]['type'], $first, $field_definition);
+
+      $table_data[$views_field_name]['entity field'] = $field_name;
+      $first = FALSE;
     }
   }
 
@@ -250,113 +259,126 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
    *
    * @param string $table
    *   The table of the field to handle.
-   * @param string $data_type
-   *   The data type to generate views data for, for example "int". The data
-   *   type comes directly from the schema definition of each field item.
-   * @param string $schema_field_name
-   *   The schema field name.
+   * @param string $field_name
+   *   The machine name of the field being processed.
+   * @param string $field_type
+   *   The type of field being handled.
+   * @param string $column_name
+   *   For fields containing multiple columns, the column name being processed.
+   * @param string $column_type
+   *   Within the field, the column type being handled.
+   * @param bool $first
+   *   TRUE if this is the first column within the field.
    * @param \Drupal\Core\Field\FieldDefinitionInterface $field_definition
    *   The field definition.
-   * @param bool $first
-   *   Is it the first column of the schema.
    *
    * @return array
    *   The modified views data field definition.
    */
-  protected function mapSingleFieldViewsData($table, $data_type, $schema_field_name, FieldDefinitionInterface $field_definition, $first) {
+  protected function mapSingleFieldViewsData($table, $field_name, $field_type, $column_name, $column_type, $first, FieldDefinitionInterface $field_definition) {
     $views_field = array();
 
-    // Provide a nicer, less verbose label for the first field.
+    // Provide a nicer, less verbose label for the first column within a field.
+    // @todo Introduce concept of the "main" column for a field, rather than
+    //   assuming the first one is the main column.
     if ($first) {
       $views_field['title'] = $field_definition->getLabel();
     }
     else {
-      $views_field['title'] = $field_definition->getLabel() . " ($schema_field_name)";
+      $views_field['title'] = $field_definition->getLabel() . " ($column_name)";
     }
 
     if ($description = $field_definition->getDescription()) {
       $views_field['help'] = $description;
     }
 
+    // Set up the field, sort, argument, and filters, based on
+    // the column and/or field data type.
     // @todo Allow field types to customize this.
     // @see https://www.drupal.org/node/2337515
-    switch ($data_type) {
-      case 'int':
-      case 'integer':
-      case 'smallint':
-      case 'tinyint':
-      case 'mediumint':
-      case 'float':
-      case 'double':
-      case 'decimal':
-        $views_field['field']['id'] = 'numeric';
-        $views_field['argument']['id'] = 'numeric';
-        $views_field['filter']['id'] = 'numeric';
-        $views_field['sort']['id'] = 'standard';
+    switch ($field_type) {
+      // Special case a few field types.
+      case 'timestamp':
+      case 'created':
+      case 'changed':
+        $views_field['field']['id'] = 'date';
+        $views_field['argument']['id'] = 'date';
+        $views_field['filter']['id'] = 'date';
+        $views_field['sort']['id'] = 'date';
         break;
-      case 'char':
-      case 'string':
-      case 'varchar':
-      case 'tinytext':
-      case 'text':
-      case 'mediumtext':
-      case 'longtext':
-        $views_field['field']['id'] = 'standard';
-        $views_field['argument']['id'] = 'string';
-        $views_field['filter']['id'] = 'string';
-        $views_field['sort']['id'] = 'standard';
-        break;
-      case 'boolean':
-        $views_field['field']['id'] = 'boolean';
-        $views_field['argument']['id'] = 'numeric';
-        $views_field['filter']['id'] = 'boolean';
-        $views_field['sort']['id'] = 'standard';
-        break;
-      case 'uuid':
-        $views_field['field']['id'] = 'standard';
-        $views_field['argument']['id'] = 'string';
-        $views_field['filter']['id'] = 'string';
-        $views_field['sort']['id'] = 'standard';
-        break;
+
       case 'language':
         $views_field['field']['id'] = 'language';
         $views_field['argument']['id'] = 'language';
         $views_field['filter']['id'] = 'language';
         $views_field['sort']['id'] = 'standard';
         break;
-      case 'created':
-      case 'changed':
-      $views_field['field']['id'] = 'date';
-      $views_field['argument']['id'] = 'date';
-      $views_field['filter']['id'] = 'date';
-      $views_field['sort']['id'] = 'date';
-        break;
-      case 'entity_reference':
-        // @todo Should the actual field handler respect that this is just renders a number
-        // @todo Create an optional entity field handler, that can render the
-        //   entity.
-        // @see https://www.drupal.org/node/2322949
-        $views_field['field']['id'] = 'standard';
-        $views_field['argument']['id'] = 'standard';
-        $views_field['filter']['id'] = 'standard';
+
+      case 'boolean':
+        $views_field['field']['id'] = 'boolean';
+        $views_field['argument']['id'] = 'numeric';
+        $views_field['filter']['id'] = 'boolean';
         $views_field['sort']['id'] = 'standard';
         break;
+
       case 'uri':
-        $views_field['field']['id'] = 'standard';
+        $views_field['field']['id'] = 'url';
         $views_field['argument']['id'] = 'string';
         $views_field['filter']['id'] = 'string';
         $views_field['sort']['id'] = 'standard';
         break;
+
+      case 'text':
+      case 'text_with_summary':
+        // Treat these three long text fields the same.
+        $field_type = 'text_long';
+        // Intentional fall-through here to the default processing!
+
       default:
-        $views_field['field']['id'] = 'standard';
-        $views_field['argument']['id'] = 'standard';
-        $views_field['filter']['id'] = 'standard';
-        $views_field['sort']['id'] = 'standard';
+        // For most fields, the field type is generic enough to just use
+        // the column type to determine the filters etc.
+        switch ($column_type) {
+
+          case 'int':
+          case 'integer':
+          case 'smallint':
+          case 'tinyint':
+          case 'mediumint':
+          case 'float':
+          case 'double':
+          case 'decimal':
+            $views_field['field']['id'] = 'numeric';
+            $views_field['argument']['id'] = 'numeric';
+            $views_field['filter']['id'] = 'numeric';
+            $views_field['sort']['id'] = 'standard';
+            break;
+
+          case 'char':
+          case 'string':
+          case 'varchar':
+          case 'tinytext':
+          case 'text':
+          case 'mediumtext':
+          case 'longtext':
+            $views_field['field']['id'] = 'standard';
+            $views_field['argument']['id'] = 'string';
+            $views_field['filter']['id'] = 'string';
+            $views_field['sort']['id'] = 'standard';
+            break;
+
+          default:
+            $views_field['field']['id'] = 'standard';
+            $views_field['argument']['id'] = 'standard';
+            $views_field['filter']['id'] = 'standard';
+            $views_field['sort']['id'] = 'standard';
+        }
     }
 
-    $process_method = 'processViewsDataFor' . Container::camelize($data_type);
+    // Do post-processing for a few field types.
+
+    $process_method = 'processViewsDataFor' . Container::camelize($field_type);
     if (method_exists($this, $process_method)) {
-      $this->{$process_method}($table, $field_definition, $views_field);
+      $this->{$process_method}($table, $field_definition, $views_field, $column_name);
     }
 
     return $views_field;
@@ -371,10 +393,12 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
    *   The field definition.
    * @param array $views_field
    *   The views field data.
+   * @param string $field_column_name
+   *   The field column being processed.
    */
-  protected function processViewsDataForLanguage($table, FieldDefinitionInterface $field_definition, array &$views_field) {
+  protected function processViewsDataForLanguage($table, FieldDefinitionInterface $field_definition, array &$views_field, $field_column_name) {
     // Apply special titles for the langcode field.
-    if ($field_definition->getName() == 'langcode') {
+    if ($field_definition->getName() == $this->entityType->getKey('langcode')) {
       if ($table == $this->entityType->getDataTable() || $table == $this->entityType->getRevisionDataTable()) {
         $views_field['title'] = $this->t('Translation language');
       }
@@ -393,8 +417,17 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
    *   The field definition.
    * @param array $views_field
    *   The views field data.
+   * @param string $field_column_name
+   *   The field column being processed.
    */
-  protected function processViewsDataForEntityReference($table, FieldDefinitionInterface $field_definition, array &$views_field) {
+  protected function processViewsDataForEntityReference($table, FieldDefinitionInterface $field_definition, array &$views_field, $field_column_name) {
+
+    // @todo Should the actual field handler respect that this just renders a
+    //   number?
+    // @todo Create an optional entity field handler, that can render the
+    //   entity.
+    // @see https://www.drupal.org/node/2322949
+
     if ($entity_type_id = $field_definition->getItemDefinition()->getSetting('target_type')) {
       $entity_type = $this->entityManager->getDefinition($entity_type_id);
       if ($entity_type instanceof ContentEntityType) {
@@ -422,6 +455,26 @@ class EntityViewsData implements EntityHandlerInterface, EntityViewsDataInterfac
       // @todo Use the other bundle handlers, once
       //   https://www.drupal.org/node/2322949 is in.
       $views_field['filter']['id'] = 'bundle';
+    }
+  }
+
+  /**
+   * Processes the views data for a text field with formatting.
+   *
+   * @param string $table
+   *   The table the field is added to.
+   * @param \Drupal\Core\Field\FieldDefinitionInterface $field_definition
+   *   The field definition.
+   * @param array $views_field
+   *   The views field data.
+   * @param string $field_column_name
+   *   The field column being processed.
+   */
+  protected function processViewsDataForTextLong($table, FieldDefinitionInterface $field_definition, array &$views_field, $field_column_name) {
+    // Connect the text field to its formatter.
+    if ($field_column_name == 'value') {
+      $views_field['field']['format'] = $field_definition->getName() . '__format';
+      $views_field['field']['id'] = 'markup';
     }
   }
 

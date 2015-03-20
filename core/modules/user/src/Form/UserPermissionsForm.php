@@ -97,13 +97,15 @@ class UserPermissionsForm extends FormBase {
     $hide_descriptions = system_admin_compact_mode();
 
     $form['system_compact_link'] = array(
-      '#theme' => 'system_compact_link',
+      '#id' => FALSE,
+      '#type' => 'system_compact_link',
     );
 
     $form['permissions'] = array(
       '#type' => 'table',
       '#header' => array($this->t('Permission')),
       '#id' => 'permissions',
+      '#attributes' => ['class' => ['permissions']],
       '#sticky' => TRUE,
     );
     foreach ($role_names as $name) {

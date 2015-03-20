@@ -97,7 +97,7 @@ class LanguageAddForm extends LanguageFormBase {
       // to their theme so they can switch between the languages.
       drupal_set_message($this->t('Use one of the language switcher blocks to allow site visitors to switch between languages. You can enable these blocks on the <a href="@block-admin">block administration page</a>.', array('@block-admin' => $this->url('block.admin_display'))));
     }
-    $form_state->setRedirect('language.admin_overview');
+    $form_state->setRedirectUrl($this->entity->urlInfo('collection'));
   }
 
   /**
@@ -117,8 +117,8 @@ class LanguageAddForm extends LanguageFormBase {
       // Reuse the editing form validation routine if we add a custom language.
       $this->validateCommon($form['custom_language'], $form_state);
 
-      if ($language = language_load($langcode)) {
-        $form_state->setErrorByName('langcode', $this->t('The language %language (%langcode) already exists.', array('%language' => $language->name, '%langcode' => $langcode)));
+      if ($language = $this->languageManager->getLanguage($langcode)) {
+        $form_state->setErrorByName('langcode', $this->t('The language %language (%langcode) already exists.', array('%language' => $language->getName(), '%langcode' => $langcode)));
       }
     }
     else {
@@ -135,8 +135,8 @@ class LanguageAddForm extends LanguageFormBase {
       $form_state->setErrorByName('predefined_langcode', $this->t('Fill in the language details and save the language with <em>Add custom language</em>.'));
     }
     else {
-      if ($language = language_load($langcode)) {
-        $form_state->setErrorByName('predefined_langcode', $this->t('The language %language (%langcode) already exists.', array('%language' => $language->name, '%langcode' => $langcode)));
+      if ($language = $this->languageManager->getLanguage($langcode)) {
+        $form_state->setErrorByName('predefined_langcode', $this->t('The language %language (%langcode) already exists.', array('%language' => $language->getName(), '%langcode' => $langcode)));
       }
     }
   }
@@ -159,6 +159,11 @@ class LanguageAddForm extends LanguageFormBase {
     $entity->set('id', $langcode);
     $entity->set('label', $label);
     $entity->set('direction', $direction);
+    // There is no weight on the edit form. Fetch all configurable languages
+    // ordered by weight and set the new language to be placed after them.
+    $languages = \Drupal::languageManager()->getLanguages(ConfigurableLanguage::STATE_CONFIGURABLE);
+    $last_language = end($languages);
+    $entity->setWeight($last_language->getWeight() + 1);
   }
 
 }

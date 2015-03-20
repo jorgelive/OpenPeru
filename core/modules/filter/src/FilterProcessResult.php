@@ -9,6 +9,7 @@ namespace Drupal\filter;
 
 use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Cache\Cache;
+use Drupal\Core\Render\BubbleableMetadata;
 
 /**
  * Used to return values from a text filter plugin's processing method.
@@ -49,7 +50,7 @@ use Drupal\Core\Cache\Cache;
  *   ));
  *
  *   // Associate cache tags to be invalidated by.
- *   $result->setCacheTags($node->getCacheTag());
+ *   $result->setCacheTags($node->getCacheTags());
  *
  *   return $result;
  * }
@@ -246,6 +247,19 @@ class FilterProcessResult {
   public function setPostRenderCacheCallbacks(array $post_render_cache_callbacks) {
     $this->postRenderCacheCallbacks = $post_render_cache_callbacks;
     return $this;
+  }
+
+  /**
+   * Returns the attached asset libraries, etc. as a bubbleable metadata object.
+   *
+   * @return \Drupal\Core\Render\BubbleableMetadata
+   */
+  public function getBubbleableMetadata() {
+    return new BubbleableMetadata(
+      $this->getCacheTags(),
+      $this->getAssets(),
+      $this->getPostRenderCacheCallbacks()
+    );
   }
 
 }

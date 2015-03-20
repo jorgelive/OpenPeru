@@ -9,14 +9,14 @@ namespace Drupal\migrate_drupal\Tests\d6;
 
 use Drupal\config\Tests\SchemaCheckTestTrait;
 use Drupal\migrate\MigrateExecutable;
-use Drupal\migrate_drupal\Tests\MigrateDrupalTestBase;
+use Drupal\migrate_drupal\Tests\d6\MigrateDrupal6TestBase;
 
 /**
  * Upgrade variables to syslog.settings.yml.
  *
  * @group migrate_drupal
  */
-class MigrateSyslogConfigsTest extends MigrateDrupalTestBase {
+class MigrateSyslogConfigsTest extends MigrateDrupal6TestBase {
 
   use SchemaCheckTestTrait;
 
@@ -34,7 +34,7 @@ class MigrateSyslogConfigsTest extends MigrateDrupalTestBase {
     parent::setUp();
     $migration = entity_load('migration', 'd6_syslog_settings');
     $dumps = array(
-      $this->getDumpDirectory() . '/Drupal6SyslogSettings.php',
+      $this->getDumpDirectory() . '/Variable.php',
     );
     $this->prepare($migration, $dumps);
     $executable = new MigrateExecutable($migration, $this);
@@ -45,7 +45,7 @@ class MigrateSyslogConfigsTest extends MigrateDrupalTestBase {
    * Tests migration of syslog variables to syslog.settings.yml.
    */
   public function testSyslogSettings() {
-    $config = \Drupal::config('syslog.settings');
+    $config = $this->config('syslog.settings');
     $this->assertIdentical($config->get('identity'), 'drupal');
     $this->assertIdentical($config->get('facility'), '128');
     $this->assertConfigSchema(\Drupal::service('config.typed'), 'syslog.settings', $config->get());

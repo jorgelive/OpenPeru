@@ -12,6 +12,7 @@ use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Entity\EntityViewBuilder;
 use Drupal\Core\Config\Config;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -93,13 +94,13 @@ class FeedViewBuilder extends EntityViewBuilder {
         if ($image && $label && $link_href) {
           $link_title = array(
             '#theme' => 'image',
-            '#path' => $image,
+            '#uri' => $image,
             '#alt' => $label,
           );
           $image_link = array(
             '#type' => 'link',
             '#title' => $link_title,
-            '#href' => $link_href,
+            '#url' => Url::fromUri($link_href),
             '#options' => array(
               'attributes' => array('class' => array('feed-image')),
               'html' => TRUE,
@@ -124,8 +125,7 @@ class FeedViewBuilder extends EntityViewBuilder {
           '#title' => t('More<span class="visually-hidden"> posts about @title</span>', array(
             '@title' => $title_stripped,
           )),
-          '#route_name' => 'entity.aggregator_feed.canonical',
-          '#route_parameters' => array('aggregator_feed' => $entity->id()),
+          '#url' => Url::fromRoute('entity.aggregator_feed.canonical', ['aggregator_feed' => $entity->id()]),
           '#options' => array(
             'html' => TRUE,
             'attributes' => array(

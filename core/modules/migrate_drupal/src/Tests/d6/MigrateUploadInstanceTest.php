@@ -7,15 +7,16 @@
 
 namespace Drupal\migrate_drupal\Tests\d6;
 
+use Drupal\field\Entity\FieldConfig;
 use Drupal\migrate\MigrateExecutable;
-use Drupal\migrate_drupal\Tests\MigrateDrupalTestBase;
+use Drupal\migrate_drupal\Tests\d6\MigrateDrupal6TestBase;
 
 /**
  * Upload field instance migration.
  *
  * @group migrate_drupal
  */
-class MigrateUploadInstanceTest extends MigrateDrupalTestBase {
+class MigrateUploadInstanceTest extends MigrateDrupal6TestBase {
 
   /**
    * The modules to be enabled during the test.
@@ -53,7 +54,8 @@ class MigrateUploadInstanceTest extends MigrateDrupalTestBase {
 
     $migration = entity_load('migration', 'd6_upload_field_instance');
     $dumps = array(
-      $this->getDumpDirectory() . '/Drupal6UploadInstance.php',
+      $this->getDumpDirectory() . '/NodeType.php',
+      $this->getDumpDirectory() . '/Variable.php',
     );
     $this->prepare($migration, $dumps);
     $executable = new MigrateExecutable($migration, $this);
@@ -64,21 +66,21 @@ class MigrateUploadInstanceTest extends MigrateDrupalTestBase {
    * Tests the Drupal 6 upload settings to Drupal 8 field instance migration.
    */
   public function testUploadFieldInstance() {
-    $field = entity_load('field_config', 'node.page.upload');
+    $field = FieldConfig::load('node.page.upload');
     $settings = $field->getSettings();
-    $this->assertEqual($field->id(), 'node.page.upload');
-    $this->assertEqual($settings['file_extensions'], 'jpg jpeg gif png txt doc xls pdf ppt pps odt ods odp');
-    $this->assertEqual($settings['max_filesize'], '1MB');
-    $this->assertEqual($settings['description_field'], TRUE);
+    $this->assertIdentical($field->id(), 'node.page.upload');
+    $this->assertIdentical($settings['file_extensions'], 'jpg jpeg gif png txt doc xls pdf ppt pps odt ods odp');
+    $this->assertIdentical($settings['max_filesize'], '1MB');
+    $this->assertIdentical($settings['description_field'], TRUE);
 
-    $field = entity_load('field_config', 'node.story.upload');
-    $this->assertEqual($field->id(), 'node.story.upload');
+    $field = FieldConfig::load('node.story.upload');
+    $this->assertIdentical($field->id(), 'node.story.upload');
 
     // Shouldn't exist.
-    $field = entity_load('field_config', 'node.article.upload');
+    $field = FieldConfig::load('node.article.upload');
     $this->assertTrue(is_null($field));
 
-    $this->assertEqual(array('node', 'page', 'upload'), entity_load('migration', 'd6_upload_field_instance')->getIdMap()->lookupDestinationID(array('page')));
+    $this->assertIdentical(array('node', 'page', 'upload'), entity_load('migration', 'd6_upload_field_instance')->getIdMap()->lookupDestinationID(array('page')));
   }
 
 }

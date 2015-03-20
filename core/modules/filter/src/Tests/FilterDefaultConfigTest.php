@@ -7,21 +7,21 @@
 
 namespace Drupal\filter\Tests;
 
-use Drupal\simpletest\DrupalUnitTestBase;
+use Drupal\simpletest\KernelTestBase;
 
 /**
  * Tests text format default configuration.
  *
  * @group filter
  */
-class FilterDefaultConfigTest extends DrupalUnitTestBase {
+class FilterDefaultConfigTest extends KernelTestBase {
 
-  public static $modules = array('system', 'user', 'filter', 'filter_test', 'entity');
+  public static $modules = array('system', 'user', 'filter', 'filter_test');
 
   protected function setUp() {
     parent::setUp();
 
-    // Drupal\filter\FilterPermissions::permissions() calls into _url() to output
+    // Drupal\filter\FilterPermissions::permissions() builds an URL to output
     // a link in the description.
     $this->installSchema('system', 'url_alias');
 

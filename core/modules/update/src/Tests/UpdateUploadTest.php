@@ -7,6 +7,8 @@
 
 namespace Drupal\update\Tests;
 
+use Drupal\Core\Url;
+
 /**
  * Tests the Update Manager module's upload and extraction functionality.
  *
@@ -43,6 +45,7 @@ class UpdateUploadTest extends UpdateTestBase {
     // This also checks that the correct archive extensions are allowed.
     $this->drupalPostForm('admin/modules/install', $edit, t('Install'));
     $this->assertText(t('Only files with the following extensions are allowed: @archive_extensions.', array('@archive_extensions' => archiver_get_extensions())),'Only valid archives can be uploaded.');
+    $this->assertUrl('admin/modules/install');
 
     // Check to ensure an existing module can't be reinstalled. Also checks that
     // the archive was extracted since we can't know if the module is already
@@ -53,6 +56,25 @@ class UpdateUploadTest extends UpdateTestBase {
     );
     $this->drupalPostForm('admin/modules/install', $edit, t('Install'));
     $this->assertText(t('@module_name is already installed.', array('@module_name' => 'AAA Update test')), 'Existing module was extracted and not reinstalled.');
+    $this->assertUrl('admin/modules/install');
+
+    // Ensure that a new module can be extracted and installed.
+    $updaters = drupal_get_updaters();
+    $moduleUpdater = $updaters['module']['class'];
+    $installedInfoFilePath = $this->container->get('update.root') . '/' . $moduleUpdater::getRootDirectoryRelativePath() . '/update_test_new_module/update_test_new_module.info.yml';
+    $this->assertFalse(file_exists($installedInfoFilePath), 'The new module does not exist in the filesystem before it is installed with the Update Manager.');
+    $validArchiveFile = drupal_get_path('module', 'update') . '/tests/update_test_new_module.tar.gz';
+    $edit = array(
+      'files[project_upload]' => $validArchiveFile,
+    );
+    $this->drupalPostForm('admin/modules/install', $edit, t('Install'));
+    // Check that submitting the form takes the user to authorize.php.
+    // @todo Remove <none> from the expected URL once that bug is fixed.
+    $this->assertUrl('core/authorize.php/<none>');
+    // Check for a success message on the page, and check that the installed
+    // module now exists in the expected place in the filesystem.
+    $this->assertRaw(t('Installed %project_name successfully', array('%project_name' => 'update_test_new_module')));
+    $this->assertTrue(file_exists($installedInfoFilePath), 'The new module exists in the filesystem after it is installed with the Update Manager.');
   }
 
   /**
@@ -72,14 +94,16 @@ class UpdateUploadTest extends UpdateTestBase {
   function testUpdateManagerCoreSecurityUpdateMessages() {
     $setting = array(
       '#all' => array(
-        'version' => '7.0',
+        'version' => '8.0.0',
       ),
     );
-    \Drupal::config('update_test.settings')
+    $this->config('update_test.settings')
       ->set('system_info', $setting)
-      ->set('xml_map', array('drupal' => '2-sec'))
+      ->set('xml_map', array('drupal' => '0.2-sec'))
       ->save();
-    \Drupal::config('update.settings')->set('fetch.url', _url('update-test', array('absolute' => TRUE)))->save();
+    $this->config('update.settings')
+      ->set('fetch.url', Url::fromRoute('update_test.update_test')->setAbsolute()->toString())
+      ->save();
     // Initialize the update status.
     $this->drupalGet('admin/reports/updates');
 

@@ -7,14 +7,15 @@
 
 namespace Drupal\Core\Config\Entity;
 
-use Drupal\Component\Plugin\ConfigurablePluginInterface;
 use Drupal\Component\Utility\String;
 use Drupal\Core\Cache\Cache;
+use Drupal\Core\Config\ConfigException;
 use Drupal\Core\Config\Schema\SchemaIncompleteException;
 use Drupal\Core\Entity\Entity;
 use Drupal\Core\Config\ConfigDuplicateUUIDException;
 use Drupal\Core\Entity\EntityStorageInterface;
-use Drupal\Core\Entity\EntityWithPluginBagsInterface;
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Entity\EntityWithPluginCollectionInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Plugin\PluginDependencyTrait;
 
@@ -23,7 +24,7 @@ use Drupal\Core\Plugin\PluginDependencyTrait;
  *
  * @ingroup entity_api
  */
-abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface {
+abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface, ThirdPartySettingsInterface {
 
   use PluginDependencyTrait {
     addDependency as addDependencyTrait;
@@ -43,8 +44,8 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
   /**
    * The name of the property that is used to store plugin configuration.
    *
-   * This is needed when the entity utilizes a PluginBag, to dictate where the
-   * plugin configuration should be stored.
+   * This is needed when the entity uses a LazyPluginCollection, to dictate
+   * where the plugin configuration should be stored.
    *
    * @var string
    */
@@ -85,6 +86,15 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
    * @var string
    */
   protected $langcode = LanguageInterface::LANGCODE_NOT_SPECIFIED;
+
+  /**
+   * Third party entity settings.
+   *
+   * An array of key/value pairs keyed by provider.
+   *
+   * @var array
+   */
+  protected $third_party_settings = array();
 
   /**
    * Overrides Entity::__construct().
@@ -138,11 +148,11 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
    * {@inheritdoc}
    */
   public function set($property_name, $value) {
-    if ($this instanceof EntityWithPluginBagsInterface) {
-      $plugin_bags = $this->getPluginBags();
-      if (isset($plugin_bags[$property_name])) {
+    if ($this instanceof EntityWithPluginCollectionInterface) {
+      $plugin_collections = $this->getPluginCollections();
+      if (isset($plugin_collections[$property_name])) {
         // If external code updates the settings, pass it along to the plugin.
-        $plugin_bags[$property_name]->setConfiguration($value);
+        $plugin_collections[$property_name]->setConfiguration($value);
       }
     }
 
@@ -163,7 +173,7 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
    */
   public function disable() {
     // An entity was disabled, invalidate its own cache tag.
-    Cache::invalidateTags($this->getCacheTag());
+    Cache::invalidateTags($this->getCacheTags());
     return $this->setStatus(FALSE);
   }
 
@@ -258,6 +268,9 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
         $properties[$name] = $this->get($name);
       }
     }
+    if (empty($this->third_party_settings)) {
+      unset($properties['third_party_settings']);
+    }
     return $properties;
   }
 
@@ -276,11 +289,11 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
   public function preSave(EntityStorageInterface $storage) {
     parent::preSave($storage);
 
-    if ($this instanceof EntityWithPluginBagsInterface) {
+    if ($this instanceof EntityWithPluginCollectionInterface) {
       // Any changes to the plugin configuration must be saved to the entity's
       // copy as well.
-      foreach ($this->getPluginBags() as $plugin_config_key => $plugin_bag) {
-        $this->set($plugin_config_key, $plugin_bag->getConfiguration());
+      foreach ($this->getPluginCollections() as $plugin_config_key => $plugin_collection) {
+        $this->set($plugin_config_key, $plugin_collection->getConfiguration());
       }
     }
 
@@ -304,7 +317,7 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
     }
     if (!$this->isSyncing()) {
       // Ensure the correct dependencies are present. If the configuration is
-      // being written during a configuration synchronisation then there is no
+      // being written during a configuration synchronization then there is no
       // need to recalculate the dependencies.
       $this->calculateDependencies();
     }
@@ -316,12 +329,19 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
   public function calculateDependencies() {
     // Dependencies should be recalculated on every save. This ensures stale
     // dependencies are never saved.
-    $this->dependencies = array();
-    if ($this instanceof EntityWithPluginBagsInterface) {
+    if (isset($this->dependencies['enforced'])) {
+      $dependencies = $this->dependencies['enforced'];
+      $this->dependencies = $dependencies;
+      $this->dependencies['enforced'] = $dependencies;
+    }
+    else {
+      $this->dependencies = array();
+    }
+    if ($this instanceof EntityWithPluginCollectionInterface) {
       // Configuration entities need to depend on the providers of any plugins
       // that they store the configuration for.
-      foreach ($this->getPluginBags() as $plugin_bag) {
-        foreach ($plugin_bag as $instance) {
+      foreach ($this->getPluginCollections() as $plugin_collection) {
+        foreach ($plugin_collection as $instance) {
           $this->calculatePluginDependencies($instance);
         }
       }
@@ -367,11 +387,25 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
   /**
    * {@inheritdoc}
    */
+  public function getCacheTags() {
+    // Use cache tags that match the underlying config object's name.
+    // @see \Drupal\Core\Config\ConfigBase::getCacheTags()
+    return ['config:' . $this->getConfigDependencyName()];
+  }
+
+  /**
+   * Overrides \Drupal\Core\Entity\DependencyTrait:addDependency().
+   *
+   * Note that this function should only be called from implementations of
+   * \Drupal\Core\Config\Entity\ConfigEntityInterface::calculateDependencies(),
+   * as dependencies are recalculated during every entity save.
+   *
+   * @see \Drupal\Core\Config\Entity\ConfigEntityDependency::hasDependency()
+   */
   protected function addDependency($type, $name) {
     // A config entity is always dependent on its provider. There is no need to
     // explicitly declare the dependency. An explicit dependency on Core, which
     // provides some plugins, is also not needed.
-    // @see \Drupal\Core\Config\Entity\ConfigEntityDependency::hasDependency()
     if ($type == 'module' && ($name == $this->getEntityType()->getProvider() || $name == 'core')) {
       return $this;
     }
@@ -396,7 +430,133 @@ abstract class ConfigEntityBase extends Entity implements ConfigEntityInterface 
   /**
    * {@inheritdoc}
    */
+  public function getConfigTarget() {
+    // For configuration entities, use the config ID for the config target
+    // identifier. This ensures that default configuration (which does not yet
+    // have UUIDs) can be provided and installed with references to the target,
+    // and also makes config dependencies more readable.
+    return $this->id();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function onDependencyRemoval(array $dependencies) {
+    $changed = FALSE;
+    if (!empty($this->third_party_settings)) {
+      $old_count = count($this->third_party_settings);
+      $this->third_party_settings = array_diff_key($this->third_party_settings, array_flip($dependencies['module']));
+      $changed = $old_count != count($this->third_party_settings);
+    }
+    return $changed;
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Override to never invalidate the entity's cache tag; the config system
+   * already invalidates it.
+   */
+  protected function invalidateTagsOnSave($update) {
+    Cache::invalidateTags($this->getEntityType()->getListCacheTags());
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Override to never invalidate the individual entities' cache tags; the
+   * config system already invalidates them.
+   */
+  protected static function invalidateTagsOnDelete(EntityTypeInterface $entity_type, array $entities) {
+    Cache::invalidateTags($entity_type->getListCacheTags());
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setThirdPartySetting($module, $key, $value) {
+    $this->third_party_settings[$module][$key] = $value;
+    return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getThirdPartySetting($module, $key, $default = NULL) {
+    if (isset($this->third_party_settings[$module][$key])) {
+      return $this->third_party_settings[$module][$key];
+    }
+    else {
+      return $default;
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getThirdPartySettings($module) {
+    return isset($this->third_party_settings[$module]) ? $this->third_party_settings[$module] : array();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function unsetThirdPartySetting($module, $key) {
+    unset($this->third_party_settings[$module][$key]);
+    // If the third party is no longer storing any information, completely
+    // remove the array holding the settings for this module.
+    if (empty($this->third_party_settings[$module])) {
+      unset($this->third_party_settings[$module]);
+    }
+    return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getThirdPartyProviders() {
+    return array_keys($this->third_party_settings);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function preDelete(EntityStorageInterface $storage, array $entities) {
+    parent::preDelete($storage, $entities);
+
+    foreach ($entities as $entity) {
+      if ($entity->isUninstalling() || $entity->isSyncing()) {
+        // During extension uninstall and configuration synchronization
+        // deletions are already managed.
+        break;
+      }
+      // Fix or remove any dependencies.
+      $config_entities = static::getConfigManager()->getConfigEntitiesToChangeOnDependencyRemoval('config', [$entity->getConfigDependencyName()], FALSE);
+      /** @var \Drupal\Core\Config\Entity\ConfigEntityInterface $dependent_entity */
+      foreach ($config_entities['update'] as $dependent_entity) {
+        $dependent_entity->save();
+      }
+      foreach ($config_entities['delete'] as $dependent_entity) {
+        $dependent_entity->delete();
+      }
+    }
+  }
+
+  /**
+   * Gets the configuration manager.
+   *
+   * @return \Drupal\Core\Config\ConfigManager
+   *   The configuration manager.
+   */
+  protected static function getConfigManager() {
+    return \Drupal::service('config.manager');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function isInstallable() {
+    return TRUE;
   }
 
 }

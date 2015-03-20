@@ -9,12 +9,11 @@ namespace Drupal\node;
 
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\ContentEntityForm;
-use Drupal\Core\Form\FormStateInterface;
-use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Entity\EntityManagerInterface;
-use Drupal\user\TempStoreFactory;
-use Symfony\Component\DependencyInjection\ContainerInterface;
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\user\Entity\User;
+use Drupal\user\PrivateTempStoreFactory;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Form controller for the node edit forms.
@@ -24,19 +23,24 @@ class NodeForm extends ContentEntityForm {
   /**
    * The tempstore factory.
    *
-   * @var \Drupal\user\TempStoreFactory
+   * @var \Drupal\user\PrivateTempStoreFactory
    */
   protected $tempStoreFactory;
+
+  /**
+   * Whether this node has been previewed or not.
+   */
+  protected $hasBeenPreviewed = FALSE;
 
   /**
    * Constructs a ContentEntityForm object.
    *
    * @param \Drupal\Core\Entity\EntityManagerInterface $entity_manager
    *   The entity manager.
-   * @param \Drupal\user\TempStoreFactory $temp_store_factory
+   * @param \Drupal\user\PrivateTempStoreFactory $temp_store_factory
    *   The factory for the temp store object.
    */
-  public function __construct(EntityManagerInterface $entity_manager, TempStoreFactory $temp_store_factory) {
+  public function __construct(EntityManagerInterface $entity_manager, PrivateTempStoreFactory $temp_store_factory) {
     parent::__construct($entity_manager);
     $this->tempStoreFactory = $temp_store_factory;
   }
@@ -47,7 +51,7 @@ class NodeForm extends ContentEntityForm {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('entity.manager'),
-      $container->get('user.tempstore')
+      $container->get('user.private_tempstore')
     );
   }
 
@@ -86,6 +90,13 @@ class NodeForm extends ContentEntityForm {
       $form_state->setRebuild();
       $this->entity = $preview->getFormObject()->getEntity();
       unset($this->entity->in_preview);
+
+      // Remove the stale temp store entry for existing nodes.
+      if (!$this->entity->isNew()) {
+        $store->delete($uuid);
+      }
+
+      $this->hasBeenPreviewed = TRUE;
     }
 
     /** @var \Drupal\node\NodeInterface $node */
@@ -106,15 +117,6 @@ class NodeForm extends ContentEntityForm {
     $form['changed'] = array(
       '#type' => 'hidden',
       '#default_value' => $node->getChangedTime(),
-    );
-
-    $language_configuration = \Drupal::moduleHandler()->invoke('language', 'get_default_configuration', array('node', $node->getType()));
-    $form['langcode'] = array(
-      '#title' => t('Language'),
-      '#type' => 'language_select',
-      '#default_value' => $node->getUntranslated()->language()->id,
-      '#languages' => LanguageInterface::STATE_ALL,
-      '#access' => isset($language_configuration['language_show']) && $language_configuration['language_show'],
     );
 
     $form['advanced'] = array(
@@ -205,6 +207,8 @@ class NodeForm extends ContentEntityForm {
       $form['sticky']['#group'] = 'options';
     }
 
+    $form['#attached']['library'][] = 'node/form';
+
     return $form;
   }
 
@@ -216,7 +220,7 @@ class NodeForm extends ContentEntityForm {
     $node = $this->entity;
     $preview_mode = $node->type->entity->getPreviewMode();
 
-    $element['submit']['#access'] = $preview_mode != DRUPAL_REQUIRED || (!$form_state->getErrors() && $form_state->get('node_preview'));
+    $element['submit']['#access'] = $preview_mode != DRUPAL_REQUIRED || $this->hasBeenPreviewed;
 
     // If saving is an option, privileged users get dedicated form submit
     // buttons to adjust the publishing status while saving in one go.
@@ -294,14 +298,6 @@ class NodeForm extends ContentEntityForm {
       $form_state->setErrorByName('changed', $this->t('The content on this page has either been modified by another user, or you have already submitted modifications using this form. As a result, your changes cannot be saved.'));
     }
 
-    // Invoke hook_node_validate() for validation needed by modules.
-    // Can't use \Drupal::moduleHandler()->invokeAll(), because $form_state must
-    // be receivable by reference.
-    foreach (\Drupal::moduleHandler()->getImplementations('node_validate') as $module) {
-      $function = $module . '_node_validate';
-      $function($node, $form, $form_state);
-    }
-
     parent::validate($form, $form_state);
   }
 
@@ -328,12 +324,6 @@ class NodeForm extends ContentEntityForm {
     }
     else {
       $node->setNewRevision(FALSE);
-    }
-
-    $node->validated = TRUE;
-    foreach (\Drupal::moduleHandler()->getImplementations('node_submit') as $module) {
-      $function = $module . '_node_submit';
-      $function($node, $form, $form_state);
     }
   }
 
@@ -436,9 +426,7 @@ class NodeForm extends ContentEntityForm {
 
       // Remove the preview entry from the temp store, if any.
       $store = $this->tempStoreFactory->get('node_preview');
-      if ($store->get($node->uuid())) {
-        $store->delete($node->uuid());
-      }
+      $store->delete($node->uuid());
     }
     else {
       // In the unlikely case something went wrong on save, the node will be

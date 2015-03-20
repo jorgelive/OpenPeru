@@ -125,7 +125,7 @@ class MenuLinkTree implements MenuLinkTreeInterface {
           // expanded.
           ->addExpandedParents($this->treeStorage->getExpanded($menu_name, $active_trail));
 
-        $this->cache->set($cid, $parameters, CacheBackendInterface::CACHE_PERMANENT, array('menu:' . $menu_name));
+        $this->cache->set($cid, $parameters, CacheBackendInterface::CACHE_PERMANENT, array('config:system.menu.' . $menu_name));
       }
       $this->cachedCurrentRouteParameters[$menu_name] = $parameters;
     }
@@ -202,7 +202,7 @@ class MenuLinkTree implements MenuLinkTreeInterface {
     $items = array();
 
     foreach ($tree as $data) {
-      $class = array();
+      $class = ['menu-item'];
       /** @var \Drupal\Core\Menu\MenuLinkInterface $link */
       $link = $data->link;
       // Generally we only deal with visible links, but just in case.
@@ -212,17 +212,14 @@ class MenuLinkTree implements MenuLinkTreeInterface {
       // Set a class for the <li>-tag. Only set 'expanded' class if the link
       // also has visible children within the current tree.
       if ($data->hasChildren && !empty($data->subtree)) {
-        $class[] = 'expanded';
+        $class[] = 'menu-item--expanded';
       }
       elseif ($data->hasChildren) {
-        $class[] = 'collapsed';
-      }
-      else {
-        $class[] = 'leaf';
+        $class[] = 'menu-item--collapsed';
       }
       // Set a class if the link is in the active trail.
       if ($data->inActiveTrail) {
-        $class[] = 'active-trail';
+        $class[] = 'menu-item--active-trail';
       }
 
       // Allow menu-specific theme overrides.
@@ -255,7 +252,7 @@ class MenuLinkTree implements MenuLinkTreeInterface {
       $build['#theme'] = 'menu__' . strtr($menu_name, '-', '_');
       $build['#items'] = $items;
       // Set cache tag.
-      $build['#cache']['tags'][] = 'menu:' . $menu_name;
+      $build['#cache']['tags'][] = 'config:system.menu.' . $menu_name;
       return $build;
     }
     else {

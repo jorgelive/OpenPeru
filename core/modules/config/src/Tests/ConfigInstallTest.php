@@ -7,7 +7,9 @@
 
 namespace Drupal\config\Tests;
 
-use Drupal\simpletest\DrupalUnitTestBase;
+use Drupal\Core\Config\PreExistingConfigException;
+use Drupal\Core\Config\StorageInterface;
+use Drupal\simpletest\KernelTestBase;
 
 /**
  * Tests installation of configuration objects in installation functionality.
@@ -15,7 +17,11 @@ use Drupal\simpletest\DrupalUnitTestBase;
  * @group config
  * @see \Drupal\Core\Config\ConfigInstaller
  */
-class ConfigInstallTest extends DrupalUnitTestBase {
+class ConfigInstallTest extends KernelTestBase {
+
+  /**
+   * {@inheritdoc}
+   */
   protected function setUp() {
     parent::setUp();
 
@@ -32,9 +38,9 @@ class ConfigInstallTest extends DrupalUnitTestBase {
     $default_configuration_entity = 'config_test.dynamic.dotted.default';
 
     // Verify that default module config does not exist before installation yet.
-    $config = \Drupal::config($default_config);
+    $config = $this->config($default_config);
     $this->assertIdentical($config->isNew(), TRUE);
-    $config = \Drupal::config($default_configuration_entity);
+    $config = $this->config($default_configuration_entity);
     $this->assertIdentical($config->isNew(), TRUE);
 
     // Ensure that schema provided by modules that are not installed is not
@@ -51,9 +57,9 @@ class ConfigInstallTest extends DrupalUnitTestBase {
     // Verify that default module config exists.
     \Drupal::configFactory()->reset($default_config);
     \Drupal::configFactory()->reset($default_configuration_entity);
-    $config = \Drupal::config($default_config);
+    $config = $this->config($default_config);
     $this->assertIdentical($config->isNew(), FALSE);
-    $config = \Drupal::config($default_configuration_entity);
+    $config = $this->config($default_configuration_entity);
     $this->assertIdentical($config->isNew(), FALSE);
 
     // Verify that config_test API hooks were invoked for the dynamic default
@@ -66,11 +72,11 @@ class ConfigInstallTest extends DrupalUnitTestBase {
     $this->assertFalse(isset($GLOBALS['hook_config_test']['delete']));
 
     // Ensure that data type casting is applied during config installation.
-    $config = \Drupal::config('config_schema_test.schema_in_install');
+    $config = $this->config('config_schema_test.schema_in_install');
     $this->assertIdentical($config->get('integer'), 1);
 
     // Test that uninstalling configuration removes configuration schema.
-    \Drupal::config('core.extension')->set('module', array())->save();
+    $this->config('core.extension')->set('module', array())->save();
     \Drupal::service('config.manager')->uninstall('module', 'config_test');
     $this->assertFalse(\Drupal::service('config.typed')->hasConfigSchema('config_schema_test.schema_in_install'), 'Configuration schema for config_schema_test.schema_in_install does not exist.');
   }
@@ -109,6 +115,21 @@ class ConfigInstallTest extends DrupalUnitTestBase {
       $collection_storage = $active_storage->createCollection($collection);
       $data = $collection_storage->read('config_collection_install_test.test');
       $this->assertEqual($collection, $data['collection']);
+    }
+
+    // Tests that clashing configuration in collections is detected.
+    try {
+      \Drupal::service('module_installer')->install(['config_collection_clash_install_test']);
+      $this->fail('Expected PreExistingConfigException not thrown.');
+    }
+    catch (PreExistingConfigException $e) {
+      $this->assertEqual($e->getExtension(), 'config_collection_clash_install_test');
+      $this->assertEqual($e->getConfigObjects(), [
+        'another_collection' => ['config_collection_install_test.test'],
+        'collection.test1' => ['config_collection_install_test.test'],
+        'collection.test2' => ['config_collection_install_test.test'],
+      ]);
+      $this->assertEqual($e->getMessage(), 'Configuration objects (another_collection/config_collection_install_test.test, collection/test1/config_collection_install_test.test, collection/test2/config_collection_install_test.test) provided by config_collection_clash_install_test already exist in active configuration');
     }
 
     // Test that the we can use the config installer to install all the

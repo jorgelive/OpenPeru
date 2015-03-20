@@ -7,7 +7,7 @@
 
 use Drupal\Component\Utility\SafeMarkup;
 use Drupal\Component\Utility\Xss;
-use Drupal\Core\Page\DefaultHtmlPageRenderer;
+use Drupal\Core\Logger\RfcLogLevel;
 use Drupal\Core\Utility\Error;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -21,21 +21,21 @@ use Symfony\Component\HttpFoundation\Response;
  */
 function drupal_error_levels() {
   $types = array(
-    E_ERROR => array('Error', WATCHDOG_ERROR),
-    E_WARNING => array('Warning', WATCHDOG_WARNING),
-    E_PARSE => array('Parse error', WATCHDOG_ERROR),
-    E_NOTICE => array('Notice', WATCHDOG_NOTICE),
-    E_CORE_ERROR => array('Core error', WATCHDOG_ERROR),
-    E_CORE_WARNING => array('Core warning', WATCHDOG_WARNING),
-    E_COMPILE_ERROR => array('Compile error', WATCHDOG_ERROR),
-    E_COMPILE_WARNING => array('Compile warning', WATCHDOG_WARNING),
-    E_USER_ERROR => array('User error', WATCHDOG_ERROR),
-    E_USER_WARNING => array('User warning', WATCHDOG_WARNING),
-    E_USER_NOTICE => array('User notice', WATCHDOG_NOTICE),
-    E_STRICT => array('Strict warning', WATCHDOG_DEBUG),
-    E_RECOVERABLE_ERROR => array('Recoverable fatal error', WATCHDOG_ERROR),
-    E_DEPRECATED => array('Deprecated function', WATCHDOG_DEBUG),
-    E_USER_DEPRECATED => array('User deprecated function', WATCHDOG_DEBUG),
+    E_ERROR => array('Error', RfcLogLevel::ERROR),
+    E_WARNING => array('Warning', RfcLogLevel::WARNING),
+    E_PARSE => array('Parse error', RfcLogLevel::ERROR),
+    E_NOTICE => array('Notice', RfcLogLevel::NOTICE),
+    E_CORE_ERROR => array('Core error', RfcLogLevel::ERROR),
+    E_CORE_WARNING => array('Core warning', RfcLogLevel::WARNING),
+    E_COMPILE_ERROR => array('Compile error', RfcLogLevel::ERROR),
+    E_COMPILE_WARNING => array('Compile warning', RfcLogLevel::WARNING),
+    E_USER_ERROR => array('User error', RfcLogLevel::ERROR),
+    E_USER_WARNING => array('User warning', RfcLogLevel::WARNING),
+    E_USER_NOTICE => array('User notice', RfcLogLevel::NOTICE),
+    E_STRICT => array('Strict warning', RfcLogLevel::DEBUG),
+    E_RECOVERABLE_ERROR => array('Recoverable fatal error', RfcLogLevel::ERROR),
+    E_DEPRECATED => array('Deprecated function', RfcLogLevel::DEBUG),
+    E_USER_DEPRECATED => array('User deprecated function', RfcLogLevel::DEBUG),
   );
 
   return $types;
@@ -199,9 +199,11 @@ function _drupal_log_error($error, $fatal = FALSE) {
 
       // Attempt to reduce verbosity by removing DRUPAL_ROOT from the file path
       // in the message. This does not happen for (false) security.
-      $root_length = strlen(DRUPAL_ROOT);
-      if (substr($error['%file'], 0, $root_length) == DRUPAL_ROOT) {
-        $error['%file'] = substr($error['%file'], $root_length + 1);
+      if (\Drupal::hasService('app.root')) {
+        $root_length = strlen(\Drupal::root());
+        if (substr($error['%file'], 0, $root_length) == \Drupal::root()) {
+          $error['%file'] = substr($error['%file'], $root_length + 1);
+        }
       }
       // Should not translate the string to avoid errors producing more errors.
       $message = format_string('%type: !message in %function (line %line of %file).', $error);
@@ -218,7 +220,13 @@ function _drupal_log_error($error, $fatal = FALSE) {
         // Generate a backtrace containing only scalar argument values.
         $message .= '<pre class="backtrace">' . Error::formatBacktrace($backtrace) . '</pre>';
       }
-      drupal_set_message(SafeMarkup::set($message), $class, TRUE);
+      if (\Drupal::hasService('session_manager')) {
+        // Message display is dependent on sessions being available.
+        drupal_set_message(SafeMarkup::set($message), $class, TRUE);
+      }
+      else {
+        print $message;
+      }
     }
 
     if ($fatal) {
@@ -235,7 +243,7 @@ function _drupal_log_error($error, $fatal = FALSE) {
         install_display_output($output, $GLOBALS['install_state']);
       }
       else {
-        $output = DefaultHtmlPageRenderer::renderPage($message, 'Error');
+        $output = \Drupal::service('bare_html_page_renderer')->renderBarePage(['#markup' => $message], 'Error', 'maintenance_page');
       }
 
       $response = new Response($output, 500);

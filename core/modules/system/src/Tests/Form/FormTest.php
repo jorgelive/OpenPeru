@@ -117,7 +117,7 @@ class FormTest extends WebTestBase {
           // so we bypass it by setting the token to FALSE.
           $form['#token'] = FALSE;
           \Drupal::formBuilder()->prepareForm($form_id, $form, $form_state);
-          drupal_process_form($form_id, $form, $form_state);
+          \Drupal::formBuilder()->processForm($form_id, $form, $form_state);
           $errors = $form_state->getErrors();
           // Form elements of type 'radios' throw all sorts of PHP notices
           // when you try to render them like this, so we ignore those for
@@ -338,7 +338,7 @@ class FormTest extends WebTestBase {
       'multiple_no_default_required[]' => 'three',
     );
     $this->drupalPostForm(NULL, $edit, 'Submit');
-    $values = Json::decode($this->drupalGetContent());
+    $values = Json::decode($this->getRawContent());
 
     // Verify expected values.
     $expected = array(

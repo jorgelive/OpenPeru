@@ -6,10 +6,13 @@
 
 namespace Drupal\rdf\Tests\Field;
 
+use Drupal\Component\Utility\Unicode;
 use Drupal\rdf\Tests\Field\FieldRdfaTestBase;
 
 /**
  * Tests the placement of RDFa in link field formatters.
+ *
+ * @group rdf
  */
 class LinkFieldRdfaTest extends FieldRdfaTestBase {
 
@@ -22,17 +25,6 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
    * {@inheritdoc}
    */
   public static $modules = array('link', 'text');
-
-  /**
-   * {@inheritdoc}
-   */
-  public static function getInfo() {
-    return array(
-      'name'  => 'Field formatter: link',
-      'description'  => 'Tests RDFa output by link field formatters.',
-      'group' => 'RDF',
-    );
-  }
 
   /**
    * {@inheritdoc}
@@ -57,7 +49,7 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
     // Set up test values.
     $this->testValue = 'http://test.me/foo/bar/neque/porro/quisquam/est/qui-dolorem?foo/bar/neque/porro/quisquam/est/qui-dolorem';
     $this->entity = entity_create('entity_test', array());
-    $this->entity->{$this->fieldName}->url = $this->testValue;
+    $this->entity->{$this->fieldName}->uri = $this->testValue;
 
     // Set up the expected result.
     $expected_rdf = array(
@@ -75,8 +67,7 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
     // Set up test values.
     $this->testValue = 'admin';
     $this->entity = entity_create('entity_test', array());
-    $this->entity->{$this->fieldName}->route_name = 'system.admin';
-    $this->entity->{$this->fieldName}->url = 'admin';
+    $this->entity->{$this->fieldName}->uri = 'internal:/admin';
 
     // Set up the expected result.
     // AssertFormatterRdfa looks for a full path.
@@ -93,10 +84,9 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
    */
   public function testAllFormattersFront() {
     // Set up test values.
-    $this->testValue = '<front>';
+    $this->testValue = '/';
     $this->entity = entity_create('entity_test', array());
-    $this->entity->{$this->fieldName}->route_name = $this->testValue;
-    $this->entity->{$this->fieldName}->url = '<front>';
+    $this->entity->{$this->fieldName}->uri = 'internal:/';
 
     // Set up the expected result.
     $expected_rdf = array(
@@ -114,7 +104,7 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
 
     // Test the link formatter: trim at 80, no other settings.
     $formatter = array(
-      'type' => $type . ' link',
+      'type' => 'link',
       'settings' => array(
         'trim_length' => 80,
         'url_only' => FALSE,
@@ -127,7 +117,7 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
 
     // Test the link formatter: trim at 40, nofollow, new window.
     $formatter = array(
-      'type' => $type . ' link',
+      'type' => 'link',
       'settings' => array(
         'trim_length' => 40,
         'url_only' => FALSE,
@@ -141,7 +131,7 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
     // Test the link formatter: trim at 40, URL only (not plaintext) nofollow,
     // new window.
     $formatter = array(
-      'type' => $type . ' link',
+      'type' => 'link',
       'settings' => array(
         'trim_length' => 40,
         'url_only' => TRUE,
@@ -154,7 +144,7 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
 
     // Test the link_separate formatter: trim at 40, nofollow, new window.
     $formatter = array(
-      'type' => $type . ' link_separate',
+      'type' => 'link_separate',
       'settings' => array(
         'trim_length' => 40,
         'rel' => 'nofollow',
@@ -171,7 +161,7 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
     );
     // Test the link formatter: trim at 20, url only (as plaintext.)
     $formatter = array(
-      'type' => $type . ' link',
+      'type' => 'link',
       'settings' => array(
         'trim_length' => 20,
         'url_only' => TRUE,
@@ -184,7 +174,7 @@ class LinkFieldRdfaTest extends FieldRdfaTestBase {
 
     // Test the link formatter: do not trim, url only (as plaintext.)
     $formatter = array(
-      'type' => $type . ' link',
+      'type' => 'link',
       'settings' => array(
         'trim_length' => 0,
         'url_only' => TRUE,
