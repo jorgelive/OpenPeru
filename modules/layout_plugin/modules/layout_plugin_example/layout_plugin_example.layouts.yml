@@ -1,0 +1,23 @@
+layout_example_1col:
+  label: 1 Column Layout
+  category: Examples
+  type: page
+  theme: layout_example_1col
+  library: layout_plugin_example/1col
+  regions:
+    top:
+      label: Top region
+    bottom:
+      label: Bottom region
+
+layout_example_2col:
+  label: 2 Column layout
+  category: Examples
+  type: page
+  theme: layout_example_2col
+  library: layout_plugin_example/2col
+  regions:
+    left:
+      label: Left region
+    right:
+      label: Right region

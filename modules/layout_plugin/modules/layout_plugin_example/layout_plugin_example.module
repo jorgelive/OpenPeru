@@ -1,0 +1,21 @@
+<?php
+/**
+ * @file
+ * Hooks for Example Layouts module.
+ */
+
+/**
+ * Implements hook_theme().
+ */
+function layout_plugin_example_theme() {
+  return array(
+    'layout_example_1col' => array(
+      'render element' => 'content',
+      'template' => 'layout-example-1col',
+    ),
+    'layout_example_2col' => array(
+      'render element' => 'content',
+      'template' => 'layout-example-2col',
+    ),
+  );
+}

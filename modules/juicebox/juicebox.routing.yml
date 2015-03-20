@@ -1,0 +1,27 @@
+juicebox.xml_field:
+  path: '/juicebox/xml/{args}'
+  defaults:
+    _controller: '\Drupal\juicebox\Controller\JuiceboxXmlControllerField::xmlController'
+    # use the option below if the function should just print raw text (XML)
+    #_controller: '\Drupal\juicebox\Controller\JuiceboxXmlController::getXml'
+  requirements:
+    _access: 'TRUE'
+    args: '^field/([0-9a-zA-Z_\/-])+'
+    
+# juicebox.xml_viewsstyle:
+#   path: '/juicebox/xml/{args}'
+#   defaults:
+#     _content: '\Drupal\juicebox\Controller\JuiceboxXmlControllerViewsStyle::xmlController'
+#     # use the option below if the function should just print raw text (XML)
+#     #_controller: '\Drupal\juicebox\Controller\JuiceboxXmlController::getXml'
+#   requirements:
+#     _access: 'TRUE'
+#     args: '^viewsstyle/([0-9a-zA-Z_\/-])+'
+    
+juicebox.admin_settings:
+  path: '/admin/config/media/juicebox'
+  defaults:
+    _form: '\Drupal\juicebox\Form\SettingsForm'
+    _title: 'Juicebox Global Configuration'
+  requirements:
+    _permission: 'administer site configuration'

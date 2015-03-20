@@ -1,0 +1,10 @@
+1col:
+  version: VERSION
+  css:
+    theme:
+      css/layout-example-1col.css: {}
+2col:
+  version: VERSION
+  css:
+    theme:
+      css/layout-example-2col.css: {}
